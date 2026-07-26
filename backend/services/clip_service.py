@@ -23,7 +23,10 @@ def _run_ffmpeg_sync(args: list[str], timeout: int = 120) -> subprocess.Complete
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
-            "FFmpeg executable was not found. Install FFmpeg and add its bin directory to PATH."
+            "FFmpeg is not installed or not on PATH. Install it with:\n"
+            "  macOS:  brew install ffmpeg\n"
+            "  Ubuntu: sudo apt install ffmpeg\n"
+            "  Windows: winget install ffmpeg"
         ) from exc
 
 

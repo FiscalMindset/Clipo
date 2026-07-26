@@ -175,7 +175,10 @@ def _burn_subtitles_sync(clip_dir: Path, source_name: str, ass_name: str, output
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
-            "FFmpeg executable was not found. Install FFmpeg and add its bin directory to PATH."
+            "FFmpeg is not installed or not on PATH. Install it with:\n"
+            "  macOS:  brew install ffmpeg\n"
+            "  Ubuntu: sudo apt install ffmpeg\n"
+            "  Windows: winget install ffmpeg"
         ) from exc
     if result.returncode != 0 or not (clip_dir / output_name).exists():
         last_line = result.stderr.strip().splitlines()[-1] if result.stderr else "unknown error"
