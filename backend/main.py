@@ -26,8 +26,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from faster_whisper import WhisperModel
 
-from config import WHISPER_MODEL, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE, CLIP_DIR
+from config import WHISPER_MODEL, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE, CLIP_DIR, GEMINI_API_KEY, FRONTEND_URL
 from routes.api import router as api_router
+from routes.auth import router as auth_router
 
 
 # Global whisper model — loaded once on startup
@@ -38,6 +39,14 @@ whisper_model: WhisperModel = None
 async def lifespan(app: FastAPI):
     """Load the Whisper model on startup, cleanup on shutdown."""
     global whisper_model
+
+    # Validate required API keys
+    if not GEMINI_API_KEY:
+        print("=" * 60)
+        print("WARNING: GEMINI_API_KEY is not set!")
+        print("AI clip detection will fail without it.")
+        print("Add GEMINI_API_KEY=your_key to backend/.env")
+        print("=" * 60)
 
     print(f"Loading Whisper model '{WHISPER_MODEL}' on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE})...")
     whisper_model = WhisperModel(
@@ -79,6 +88,7 @@ CLIP_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static/clips", StaticFiles(directory=str(CLIP_DIR)), name="clips")
 
 # Register API routes
+app.include_router(auth_router)
 app.include_router(api_router)
 
 

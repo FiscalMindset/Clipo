@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from 'react';
-import { uploadVideo, submitYouTubeUrl } from '../lib/api';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { uploadVideo, submitYouTubeUrl, getConfig } from '../lib/api';
 import { requestNotificationPermission, supportsNotifications } from '../lib/notifications';
 import StudioHeader from './StudioHeader';
 
@@ -15,6 +15,7 @@ const BENEFITS = [
   ['04', 'Viral moment detection', 'AI identifies hooks worth sharing.'],
   ['05', 'One-click export', 'Social-ready clips, ready to publish.'],
 ];
+const YOUTUBE_ERROR = 'Please enter a valid YouTube video URL (youtube.com/watch?v=... or youtu.be/...)';
 
 function Icon({ name, className = 'h-5 w-5' }) {
   const paths = {
@@ -27,7 +28,11 @@ function Icon({ name, className = 'h-5 w-5' }) {
     clip: <path d="M7 4v16m10-16v16M7 8h10M7 16h10" />,
     export: <path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 13.5v5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5v-5" />,
     check: <path d="m5 12 4.5 4.5L19 7" />,
+    clock: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 1.5" /></>,
+    trash: <><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14Z" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.1 2.1-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56v.1h-3v-.1A1.7 1.7 0 0 0 10.7 18.64a1.7 1.7 0 0 0-1.88.34l-.06.06-2.1-2.1.06-.06A1.7 1.7 0 0 0 7.06 15a1.7 1.7 0 0 0-1.56-1.03h-.1v-3h.1A1.7 1.7 0 0 0 7.06 9.94a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.1-2.1.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.03-1.56v-.1h3v.1a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.1 2.1-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03h.1v3h-.1A1.7 1.7 0 0 0 19.4 15Z" /></>,
+    cpu: <><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M15 2v2m-6-2v2m6 16v2m-6-2v2m11-10h2M2 15h2m16-6h2M2 9h2" /></>,
+    bell: <><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></>,
   };
   return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.7">{paths[name]}</svg>;
 }
@@ -35,7 +40,33 @@ function Icon({ name, className = 'h-5 w-5' }) {
 const formatFileSize = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 const validYoutube = (value) => /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/|embed\/|v\/)|youtu\.be\/)[\w-]+/.test(value.trim());
 
-export default function UploadScreen({ onProcessingStart }) {
+const JOB_HISTORY_KEY = 'clipo_job_history';
+const MAX_HISTORY = 20;
+
+function loadJobHistory() {
+  try {
+    const raw = localStorage.getItem(JOB_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveJobHistory(history) {
+  try {
+    localStorage.setItem(JOB_HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+  } catch { /* storage full or unavailable */ }
+}
+
+function formatJobTime(iso) {
+  try {
+    return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
+
+export default function UploadScreen({ onProcessingStart, onNavigate, onVisitJob }) {
   const [activeTab, setActiveTab] = useState('file');
   const [file, setFile] = useState(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -44,7 +75,13 @@ export default function UploadScreen({ onProcessingStart }) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
   const [notify, setNotify] = useState(false);
+  const [jobHistory, setJobHistory] = useState(loadJobHistory);
+  const [backendConfig, setBackendConfig] = useState(null);
   const input = useRef(null);
+
+  useEffect(() => {
+    getConfig().then((cfg) => { if (cfg) setBackendConfig(cfg); }).catch(() => {});
+  }, []);
 
   const selectFile = useCallback((nextFile) => {
     setError('');
@@ -54,28 +91,63 @@ export default function UploadScreen({ onProcessingStart }) {
     if (nextFile.size > MAX_SIZE_BYTES) return setError('This file exceeds the 5 GB upload limit.');
     setFile(nextFile);
   }, []);
-  const canGenerate = activeTab === 'file' ? file : validYoutube(youtubeUrl);
+
+  const canGenerate = activeTab === 'file' ? !!file : validYoutube(youtubeUrl);
+
   const generate = async () => {
-    setUploading(true); setError(''); setUploadProgress(0);
+    setUploading(true);
+    setError('');
+    setUploadProgress(0);
     try {
       let notificationsEnabled = notify;
       if (notify) notificationsEnabled = (await requestNotificationPermission()) === 'granted';
       const response = activeTab === 'file'
         ? await uploadVideo(file, setUploadProgress)
         : await submitYouTubeUrl(youtubeUrl.trim());
-      onProcessingStart(response.job_id, {
-        notifyWhenComplete: notificationsEnabled,
-        videoName: response.filename || (activeTab === 'youtube' ? 'YouTube video' : file?.name),
+      const videoName = response.filename || (activeTab === 'youtube' ? 'YouTube video' : file?.name);
+      const newJob = {
+        jobId: response.job_id,
+        videoName,
         sourceType: activeTab,
         createdAt: new Date().toISOString(),
+      };
+      const updated = [newJob, ...jobHistory.filter((j) => j.jobId !== response.job_id)].slice(0, MAX_HISTORY);
+      setJobHistory(updated);
+      saveJobHistory(updated);
+      onProcessingStart(response.job_id, {
+        notifyWhenComplete: notificationsEnabled,
+        videoName,
+        sourceType: activeTab,
+        createdAt: newJob.createdAt,
       });
-    } catch (err) { setError(err.message || 'Unable to create this job. Please try again.'); setUploading(false); }
+    } catch (err) {
+      setError(err.message || 'Unable to create this job. Please try again.');
+      setUploading(false);
+    }
   };
+
+  const clearHistory = () => {
+    setJobHistory([]);
+    saveJobHistory([]);
+  };
+
+  const handleYouTubeChange = (e) => {
+    const value = e.target.value;
+    setYoutubeUrl(value);
+    if (value && !validYoutube(value)) {
+      setError(YOUTUBE_ERROR);
+    } else {
+      setError('');
+    }
+  };
+
+  const aiProvider = backendConfig?.ai_provider || 'none';
+  const nvidiaConfigured = backendConfig?.nvidia_configured || false;
 
   return <div className="dashboard-shell">
     <div className="dashboard-aura" />
     <div className="dashboard-frame">
-      <StudioHeader rightSlot={<button className="icon-button" aria-label="Settings"><Icon name="settings" /></button>} />
+      <StudioHeader activeTab="create" onNavigate={onNavigate} rightSlot={<button className="icon-button" aria-label="Settings" onClick={() => onNavigate?.('settings')}><Icon name="settings" /></button>} />
       <main>
         <div className="workspace-grid">
           <section className="upload-workspace">
@@ -90,7 +162,18 @@ export default function UploadScreen({ onProcessingStart }) {
               <input ref={input} className="hidden" type="file" accept={ACCEPTED_TYPES} onChange={(e) => selectFile(e.target.files?.[0])} />
               <div className="drop-icon"><Icon name={file ? 'check' : 'upload'} /></div>
               {file ? <><strong>{file.name}</strong><span>{formatFileSize(file.size)} · Ready to generate</span></> : <><strong>Drop your video here</strong><span>or click to browse from your computer</span></>}
-            </div> : <div className="url-entry"><Icon name="play" /><input autoFocus value={youtubeUrl} onChange={(e) => { setYoutubeUrl(e.target.value); setError(''); }} placeholder="Paste a YouTube URL" /><button onClick={async () => { try { setYoutubeUrl(await navigator.clipboard.readText()); } catch { setError('Paste your URL directly into the field.'); } }}>Paste</button></div>}
+            </div> : <div className={`url-entry ${youtubeUrl && !validYoutube(youtubeUrl) ? 'has-error' : ''}`}><Icon name="play" /><input autoFocus value={youtubeUrl} onChange={handleYouTubeChange} placeholder="Paste a YouTube URL" /><button onClick={async () => { try { setYoutubeUrl(await navigator.clipboard.readText()); } catch { setError('Paste your URL directly into the field.'); } }}>Paste</button></div>}
+
+            {aiProvider === 'nvidia_nim' && nvidiaConfigured && (
+              <div className="ai-provider-badge"><Icon name="cpu" /><span>NVIDIA NIM active</span></div>
+            )}
+            {aiProvider === 'gemini' && (
+              <div className="ai-provider-badge"><Icon name="spark" /><span>Gemini active</span></div>
+            )}
+            {aiProvider === 'none' && (
+              <div className="ai-provider-badge ai-provider-none"><Icon name="cpu" /><span>AI unavailable — clips will use transcript only</span></div>
+            )}
+
             <div className="upload-meta"><span>MP4 · MOV · MKV · AVI</span><span>Up to 5 GB</span><span>Video stays local</span></div>
             {uploading && <div className="upload-progress"><span style={{ width: `${uploadProgress}%` }} /></div>}
             {error && <p className="form-error">{error}</p>}
@@ -103,7 +186,34 @@ export default function UploadScreen({ onProcessingStart }) {
             <div className="pipeline-foot"><span className="live-dot" />Local GPU is ready</div>
           </aside>
         </div>
-        <section className="recent-section"><div className="section-heading"><div><div className="eyebrow">Library</div><h2>Recent jobs</h2></div><button className="ghost-button">View all <Icon name="arrow" /></button></div><div className="empty-jobs"><div className="empty-art"><i /><i /><i /><b><Icon name="spark" /></b></div><h3>Your Clipo creative queue is clear.</h3><p>Your recent projects will appear here, ready to preview, revisit and export.</p></div></section>
+
+        <section className="recent-section">
+          <div className="section-heading">
+            <div><div className="eyebrow">Library</div><h2>Recent jobs</h2></div>
+            {jobHistory.length > 0 && <button className="ghost-button" onClick={clearHistory}>Clear all</button>}
+          </div>
+          {jobHistory.length === 0 ? (
+            <div className="empty-jobs">
+              <div className="empty-art"><i /><i /><i /><b><Icon name="spark" /></b></div>
+              <h3>Your Clipo creative queue is clear.</h3>
+              <p>Your recent projects will appear here, ready to preview, revisit and export.</p>
+            </div>
+          ) : (
+            <div className="job-history-list">
+              {jobHistory.map((job) => (
+                <div className="job-history-item" key={job.jobId} onClick={() => onVisitJob?.(job.jobId, job)}>
+                  <div className="job-history-icon"><Icon name={job.sourceType === 'youtube' ? 'link' : 'upload'} /></div>
+                  <div className="job-history-info">
+                    <strong title={job.videoName}>{job.videoName}</strong>
+                    <span><Icon name="clock" /> {formatJobTime(job.createdAt)}</span>
+                  </div>
+                  <span className="job-history-id">{job.jobId?.slice(0, 8)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
         <section className="benefits"><div><div className="eyebrow">Made for creators</div><h2>Everything between<br />idea and publish.</h2></div><div className="benefit-list">{BENEFITS.map(([number, title, description]) => <div key={number}><span>{number}</span><h3>{title}</h3><p>{description}</p></div>)}</div></section>
       </main>
     </div>

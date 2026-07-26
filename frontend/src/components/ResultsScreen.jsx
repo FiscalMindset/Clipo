@@ -36,7 +36,7 @@ function ClipCard({ clip, jobId, onPlay, onRename, onDelete, onStudio }) {
   </article>;
 }
 
-export default function ResultsScreen({ jobId, onReset }) {
+export default function ResultsScreen({ jobId, onReset, onNavigate }) {
   const [clips, setClips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

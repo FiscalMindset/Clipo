@@ -5,6 +5,78 @@
 const API_BASE = 'http://localhost:8001';
 
 /**
+ * Check if the backend is reachable. Returns true if healthy, false otherwise.
+ */
+export async function checkBackendHealth() {
+  try {
+    const res = await fetch(`${API_BASE}/api/health`, { method: 'GET' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Make a fetch request with detailed error handling.
+ * Throws descriptive errors for network failures, server errors, etc.
+ */
+async function apiFetch(url, options = {}) {
+  const defaults = {
+    credentials: 'include', // send auth cookies with cross-origin requests
+  };
+  const merged = { ...defaults, ...options };
+  let res;
+  try {
+    res = await fetch(url, merged);
+  } catch (err) {
+    if (err.name === 'TypeError' && err.message.includes('fetch')) {
+      throw new Error(
+        `Cannot connect to the backend at ${API_BASE}. ` +
+        `Make sure the backend server is running (python3 main.py).`
+      );
+    }
+    throw new Error(`Network error: ${err.message}`);
+  }
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = await res.json();
+      detail = body.detail || body.message || '';
+    } catch {
+      // non-JSON response
+    }
+
+    if (res.status === 404) {
+      throw new Error(detail || `Resource not found (${url})`);
+    }
+    if (res.status === 413) {
+      throw new Error('File is too large. Maximum upload size is 5 GB.');
+    }
+    if (res.status === 422) {
+      throw new Error(detail || 'Invalid request. Please check your input.');
+    }
+    if (res.status >= 500) {
+      throw new Error(detail || `Server error (${res.status}). Please try again.`);
+    }
+    throw new Error(detail || `Request failed with status ${res.status}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Get public config info from the backend.
+ */
+export async function getConfig() {
+  try {
+    return await apiFetch(`${API_BASE}/api/config`);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Upload a video file with progress tracking.
  */
 export function uploadVideo(file, onProgress) {
@@ -34,7 +106,12 @@ export function uploadVideo(file, onProgress) {
       }
     });
 
-    xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.addEventListener('error', () =>
+      reject(new Error(
+        `Cannot connect to the backend at ${API_BASE}. ` +
+        `Make sure the backend server is running (python3 main.py).`
+      ))
+    );
     xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
 
     xhr.open('POST', `${API_BASE}/api/upload`);
@@ -46,76 +123,39 @@ export function uploadVideo(file, onProgress) {
  * Submit a YouTube URL for processing.
  */
 export async function submitYouTubeUrl(url) {
-  const res = await fetch(`${API_BASE}/api/youtube`, {
+  return apiFetch(`${API_BASE}/api/youtube`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url }),
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to submit YouTube URL');
-  }
-
-  return res.json();
 }
 
 /**
  * Start the processing pipeline for a job.
  */
 export async function startProcessing(jobId) {
-  const res = await fetch(`${API_BASE}/api/generate/${jobId}`, {
-    method: 'POST',
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to start processing');
-  }
-
-  return res.json();
+  return apiFetch(`${API_BASE}/api/generate/${jobId}`, { method: 'POST' });
 }
 
 /**
  * Get all processing jobs.
  */
 export async function getAllJobs() {
-  const res = await fetch(`${API_BASE}/api/jobs`);
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to get jobs');
-  }
-
-  return res.json();
+  return apiFetch(`${API_BASE}/api/jobs`);
 }
 
 /**
  * Get current processing status.
  */
 export async function getStatus(jobId) {
-  const res = await fetch(`${API_BASE}/api/status/${jobId}`);
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to get status');
-  }
-
-  return res.json();
+  return apiFetch(`${API_BASE}/api/status/${jobId}`);
 }
 
 /**
  * Get all generated clips for a job.
  */
 export async function getClips(jobId) {
-  const res = await fetch(`${API_BASE}/api/clips/${jobId}`);
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to get clips');
-  }
-
-  return res.json();
+  return apiFetch(`${API_BASE}/api/clips/${jobId}`);
 }
 
 /**
@@ -141,27 +181,15 @@ export function getStaticUrl(path) {
  * List available caption style variations.
  */
 export async function getCaptionStyles() {
-  const res = await fetch(`${API_BASE}/api/caption-styles`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to load caption styles');
-  }
-  return res.json();
+  return apiFetch(`${API_BASE}/api/caption-styles`);
 }
 
 /**
  * Burn captions into a clip with the requested style (on-demand, no AI).
  */
 export async function generateCaptions(jobId, clipId, style) {
-  const res = await fetch(
+  return apiFetch(
     `${API_BASE}/api/captions/${jobId}/${clipId}?style=${encodeURIComponent(style)}`,
     { method: 'POST' },
   );
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to generate captions');
-  }
-
-  return res.json();
 }
