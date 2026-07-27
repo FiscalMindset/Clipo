@@ -48,12 +48,17 @@ def _build_steps(source_type: str) -> list[dict]:
     """Build the step list based on input type."""
     steps = []
     if source_type == "youtube":
-        steps.append({"name": "Downloading Video", "status": "pending", "message": None})
+        steps.append({"name": "Downloading Video", "status": "pending",
+                       "message": "Queued — will download the video from YouTube once the pipeline starts."})
     steps.extend([
-        {"name": "Extracting Audio", "status": "pending", "message": None},
-        {"name": "Transcribing Video", "status": "pending", "message": None},
-        {"name": "Finding Best Moments", "status": "pending", "message": None},
-        {"name": "Generating Clips", "status": "pending", "message": None},
+        {"name": "Extracting Audio", "status": "pending",
+         "message": "Queued — will separate the audio track from the video file for transcription."},
+        {"name": "Transcribing Video", "status": "pending",
+         "message": "Queued — will convert speech to text with word-level timestamps using Whisper."},
+        {"name": "Finding Best Moments", "status": "pending",
+         "message": "Queued — will send the transcript to AI to identify the most engaging clips."},
+        {"name": "Generating Clips", "status": "pending",
+         "message": "Queued — will cut and export each identified moment as a standalone clip."},
     ])
     return steps
 

@@ -174,7 +174,7 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
                   <StepIcon status={step.status} />
                   <div>
                     <h3>{step.name}</h3>
-                    <p className="processing-step-message">{step.message || (step.status === 'pending' ? 'Waiting for the previous step to finish.' : 'Processing this part of your video.')}</p>
+                    <p className="processing-step-message">{step.message || (step.status === 'pending' ? 'Queued — this step will begin once the previous step completes.' : 'Processing this step of your video pipeline.')}</p>
                   </div>
                   <em>{step.status}</em>
                 </article>
