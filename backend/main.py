@@ -3,6 +3,7 @@ Clipo AI — FastAPI Backend Entry Point.
 """
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -26,8 +27,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from faster_whisper import WhisperModel
 
-from config import WHISPER_MODEL, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE, CLIP_DIR
+from config import WHISPER_MODEL, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE, CLIP_DIR, GEMINI_API_KEY, FRONTEND_URL
 from routes.api import router as api_router
+from routes.auth import router as auth_router
 
 
 # Global whisper model — loaded once on startup
@@ -38,6 +40,36 @@ whisper_model: WhisperModel = None
 async def lifespan(app: FastAPI):
     """Load the Whisper model on startup, cleanup on shutdown."""
     global whisper_model
+
+    # ── FFmpeg check ──
+    if not shutil.which("ffmpeg"):
+        print("=" * 60)
+        print("FATAL: ffmpeg is NOT installed or not on PATH.")
+        print("=" * 60)
+        print()
+        print("Clipo requires ffmpeg to extract audio, cut clips, and burn captions.")
+        print("Install it for your platform and make sure it's on your PATH:")
+        print()
+        print("  macOS (Homebrew):  brew install ffmpeg")
+        print("  Ubuntu / Debian:   sudo apt update && sudo apt install ffmpeg")
+        print("  Fedora / RHEL:     sudo dnf install ffmpeg")
+        print("  Windows (winget):  winget install ffmpeg")
+        print("  Windows (choco):   choco install ffmpeg")
+        print("  Arch Linux:        sudo pacman -S ffmpeg")
+        print()
+        print("After installing, restart this server.")
+        print("=" * 60)
+        sys.exit(1)
+
+    print(f"ffmpeg found: {shutil.which('ffmpeg')}")
+
+    # Validate required API keys
+    if not GEMINI_API_KEY:
+        print("=" * 60)
+        print("WARNING: GEMINI_API_KEY is not set!")
+        print("AI clip detection will fail without it.")
+        print("Add GEMINI_API_KEY=your_key to backend/.env")
+        print("=" * 60)
 
     print(f"Loading Whisper model '{WHISPER_MODEL}' on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE})...")
     whisper_model = WhisperModel(
@@ -79,6 +111,7 @@ CLIP_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static/clips", StaticFiles(directory=str(CLIP_DIR)), name="clips")
 
 # Register API routes
+app.include_router(auth_router)
 app.include_router(api_router)
 
 

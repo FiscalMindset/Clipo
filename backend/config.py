@@ -7,9 +7,33 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from project root
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+def _detect_whisper_device() -> str:
+    """Auto-detect the best Whisper device: cuda if available, else cpu."""
+    env_device = os.getenv("WHISPER_DEVICE")
+    if env_device:
+        return env_device
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+    except ImportError:
+        pass
+    return "cpu"
+
+
+def _detect_whisper_compute_type(device: str) -> str:
+    """Pick a sensible compute type for the device."""
+    env_ct = os.getenv("WHISPER_COMPUTE_TYPE")
+    if env_ct:
+        return env_ct
+    return "float16" if device == "cuda" else "int8"
+
+# Load .env: project root first, then backend dir (backend dir takes priority)
+BACKEND_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BACKEND_DIR.parent
 load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(BACKEND_DIR / ".env", override=True)
 
 # --- Directory Paths ---
 UPLOAD_DIR = PROJECT_ROOT / "uploads"
@@ -24,8 +48,8 @@ for d in [UPLOAD_DIR, AUDIO_DIR, TRANSCRIPT_DIR, CLIP_DIR, TEMP_DIR]:
 
 # --- Whisper Settings ---
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
-WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cuda")
-WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "float16")
+WHISPER_DEVICE = _detect_whisper_device()
+WHISPER_COMPUTE_TYPE = _detect_whisper_compute_type(WHISPER_DEVICE)
 
 # --- Gemini Settings ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -36,6 +60,15 @@ GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "4"))
 GEMINI_RETRY_BASE_SECONDS = float(os.getenv("GEMINI_RETRY_BASE_SECONDS", "2"))
 GEMINI_RETRY_MAX_SECONDS = float(os.getenv("GEMINI_RETRY_MAX_SECONDS", "30"))
+
+# --- NVIDIA NIM Settings ---
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
+NVIDIA_NIM_BASE_URL = os.getenv("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
+NVIDIA_NIM_MODEL = os.getenv("NVIDIA_NIM_MODEL", "nvidia/llama-3.3-70b-instruct")
+
+# --- AI Provider ---
+# Which AI provider to use for clip detection: "gemini" or "nvidia"
+AI_PROVIDER = os.getenv("AI_PROVIDER", "")  # empty = auto-detect based on available keys
 
 # --- Clip Constraints ---
 MIN_CLIP_DURATION = 15   # seconds
@@ -53,3 +86,15 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi"}
 
 # --- YouTube Constraints ---
 MAX_YOUTUBE_DURATION = 3 * 60 * 60  # 3 hours in seconds
+
+# --- Auth / OAuth ---
+import secrets
+JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_HOURS = 24 * 7  # 7 days
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8001")
+SESSION_COOKIE_SECRET = os.getenv("SESSION_COOKIE_SECRET", secrets.token_hex(32))

@@ -10,7 +10,7 @@ from pathlib import Path
 from faster_whisper import WhisperModel
 
 from config import AUDIO_DIR
-from models.schemas import JobStatus, StepInfo
+from models.schemas import JobStatus, StepInfo, AIUsageInfo
 from services.audio_service import extract_audio
 from services.transcription_service import transcribe
 from services.ai_service import detect_clips
@@ -31,12 +31,14 @@ def create_job(job_id: str, source_type: str, **kwargs) -> dict:
         "video_path": kwargs.get("video_path"),
         "youtube_url": kwargs.get("youtube_url"),
         "video_title": kwargs.get("video_title", ""),
+        "user_id": kwargs.get("user_id"),
         "created_at": datetime.now(timezone.utc),
         "duration": None,
         "current_step": "Waiting",
         "steps": _build_steps(source_type),
         "clips": [],
         "error": None,
+        "ai_usage": None,
     }
     jobs[job_id] = job
     return job
@@ -46,12 +48,17 @@ def _build_steps(source_type: str) -> list[dict]:
     """Build the step list based on input type."""
     steps = []
     if source_type == "youtube":
-        steps.append({"name": "Downloading Video", "status": "pending", "message": None})
+        steps.append({"name": "Downloading Video", "status": "pending",
+                       "message": "Queued — will download the video from YouTube once the pipeline starts."})
     steps.extend([
-        {"name": "Extracting Audio", "status": "pending", "message": None},
-        {"name": "Transcribing Video", "status": "pending", "message": None},
-        {"name": "Finding Best Moments", "status": "pending", "message": None},
-        {"name": "Generating Clips", "status": "pending", "message": None},
+        {"name": "Extracting Audio", "status": "pending",
+         "message": "Queued — will separate the audio track from the video file for transcription."},
+        {"name": "Transcribing Video", "status": "pending",
+         "message": "Queued — will convert speech to text with word-level timestamps using Whisper."},
+        {"name": "Finding Best Moments", "status": "pending",
+         "message": "Queued — will send the transcript to AI to identify the most engaging clips."},
+        {"name": "Generating Clips", "status": "pending",
+         "message": "Queued — will cut and export each identified moment as a standalone clip."},
     ])
     return steps
 
@@ -72,6 +79,13 @@ def get_job(job_id: str) -> dict | None:
     return jobs.get(job_id)
 
 
+def get_user_jobs(user_id: str | None) -> list[str]:
+    """Get job IDs for a user. If user_id is None, return all jobs."""
+    if user_id is None:
+        return list(jobs.keys())
+    return [jid for jid, job in jobs.items() if job.get("user_id") == user_id]
+
+
 def get_processing_status(job_id: str) -> dict | None:
     """Get the current processing status for a job."""
     job = jobs.get(job_id)
@@ -87,6 +101,8 @@ def get_processing_status(job_id: str) -> dict | None:
         "source_type": job["source_type"],
         "created_at": job["created_at"],
         "duration": job["duration"],
+        "ai_usage": AIUsageInfo(**job["ai_usage"]) if job.get("ai_usage") else None,
+        "clips_generated": len(job.get("clips", [])),
     }
 
 
@@ -98,7 +114,7 @@ async def run_pipeline(job_id: str, whisper_model: WhisperModel):
     1. (YouTube only) Download video
     2. Extract audio from video
     3. Transcribe audio with Whisper
-    4. Analyze transcript with Gemini AI
+    4. Analyze transcript with AI
     5. Generate video clips with FFmpeg
     """
     job = jobs.get(job_id)
@@ -109,63 +125,102 @@ async def run_pipeline(job_id: str, whisper_model: WhisperModel):
         # --- Step 0 (YouTube only): Download Video ---
         if job["source_type"] == "youtube":
             job["status"] = JobStatus.DOWNLOADING
-            _update_step(job, "Downloading Video", "running", "Downloading from YouTube...")
+            _update_step(job, "Downloading Video", "running", "Connecting to YouTube...")
 
             video_path, title = await download_video(job["youtube_url"], job_id)
             job["video_path"] = str(video_path)
             job["video_title"] = title
 
-            _update_step(job, "Downloading Video", "completed", f"Downloaded: {title}")
+            file_size_mb = video_path.stat().st_size / (1024 * 1024) if video_path.exists() else 0
+            _update_step(job, "Downloading Video", "completed",
+                         f"Downloaded {title} ({file_size_mb:.1f} MB)")
 
         video_path = Path(job["video_path"])
 
         # --- Step 1: Extract Audio ---
         job["status"] = JobStatus.EXTRACTING_AUDIO
-        _update_step(job, "Extracting Audio", "running", "Extracting audio track...")
+        video_size_mb = video_path.stat().st_size / (1024 * 1024) if video_path.exists() else 0
+        _update_step(job, "Extracting Audio", "running",
+                     f"Extracting audio track from {video_size_mb:.1f} MB video...")
 
         audio_path = AUDIO_DIR / f"{job_id}.wav"
         await extract_audio(video_path, audio_path)
 
-        _update_step(job, "Extracting Audio", "completed", "Audio extracted successfully")
+        audio_size_mb = audio_path.stat().st_size / (1024 * 1024) if audio_path.exists() else 0
+        _update_step(job, "Extracting Audio", "completed",
+                     f"Audio extracted — {audio_size_mb:.1f} MB WAV file ready")
 
         # --- Step 2: Transcribe ---
         job["status"] = JobStatus.TRANSCRIBING
-        _update_step(job, "Transcribing Video", "running", "Running speech-to-text...")
+        _update_step(job, "Transcribing Video", "running",
+                     "Loading Whisper model and transcribing audio...")
 
         transcript = await transcribe(audio_path, whisper_model, job_id)
         job["duration"] = transcript.get("duration")
 
+        num_segments = len(transcript.get("segments", []))
+        duration_s = transcript.get("duration", 0)
+        duration_m = duration_s / 60
+
         _update_step(
             job, "Transcribing Video", "completed",
-            f"Transcribed {transcript.get('duration', 0):.0f}s of audio"
+            f"Transcribed {duration_m:.1f} min of audio into {num_segments} speech segments"
         )
 
         # --- Step 3: AI Analysis ---
         job["status"] = JobStatus.ANALYZING
-        _update_step(job, "Finding Best Moments", "running", "AI is analyzing transcript...")
+        from config import GEMINI_API_KEY, NVIDIA_API_KEY, AI_PROVIDER
+        if AI_PROVIDER == "nvidia" or (not AI_PROVIDER and NVIDIA_API_KEY):
+            provider_name = "NVIDIA NIM"
+        elif GEMINI_API_KEY:
+            provider_name = "Gemini"
+        else:
+            provider_name = "AI"
+
+        _update_step(job, "Finding Best Moments", "running",
+                     f"Sending transcript to {provider_name} for clip detection...")
 
         def update_analysis_retry(message: str):
             _update_step(job, "Finding Best Moments", "running", message)
 
-        clip_timestamps = await detect_clips(
+        clip_timestamps, usage_info = await detect_clips(
             transcript,
             job_id,
             on_retry=update_analysis_retry,
         )
 
+        job["ai_usage"] = usage_info.model_dump()
+
+        reasons = [c.reason[:60] for c in clip_timestamps[:3]]
+        reason_preview = ", ".join(reasons) if reasons else ""
         _update_step(
             job, "Finding Best Moments", "completed",
-            f"Found {len(clip_timestamps)} interesting moments"
+            f"{provider_name} found {len(clip_timestamps)} moments"
+            + (f" — e.g. \"{reason_preview}\"" if reason_preview else "")
         )
 
         # --- Step 4: Generate Clips ---
         job["status"] = JobStatus.GENERATING_CLIPS
-        _update_step(job, "Generating Clips", "running", f"Generating {len(clip_timestamps)} clips...")
+        total_duration = sum(c.end - c.start for c in clip_timestamps)
+        _update_step(job, "Generating Clips", "running",
+                     f"Cutting {len(clip_timestamps)} clips ({total_duration:.0f}s total video)...")
 
         clips_info = await generate_clips(video_path, clip_timestamps, job_id)
         job["clips"] = [c.model_dump() for c in clips_info]
 
-        _update_step(job, "Generating Clips", "completed", f"Generated {len(clips_info)} clips")
+        clip_sizes = []
+        for ci in clips_info:
+            try:
+                fpath = video_path.parent.parent / "clips" / job_id / ci.filename
+                if fpath.exists():
+                    clip_sizes.append(fpath.stat().st_size / (1024 * 1024))
+            except Exception:
+                pass
+        total_size = sum(clip_sizes) if clip_sizes else 0
+
+        _update_step(job, "Generating Clips", "completed",
+                     f"Generated {len(clips_info)} clips"
+                     + (f" ({total_size:.1f} MB total)" if total_size else ""))
 
         # --- Done ---
         job["status"] = JobStatus.COMPLETED
