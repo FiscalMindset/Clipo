@@ -87,6 +87,12 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi"}
 # --- YouTube Constraints ---
 MAX_YOUTUBE_DURATION = 3 * 60 * 60  # 3 hours in seconds
 
+# YouTube cookie file for yt-dlp authentication.
+# Export cookies from your browser (e.g. "Get cookies.txt" extension) and point
+# this at the file. When set, yt-dlp uses it before falling back to anonymous
+# extraction strategies.
+YOUTUBE_COOKIES_FILE = os.getenv("YOUTUBE_COOKIES_FILE", "")
+
 # --- Auth / OAuth ---
 import secrets
 JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))

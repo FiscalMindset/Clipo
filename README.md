@@ -455,6 +455,18 @@ All settings are read from `backend/.env`. Defaults work out of the box for loca
 | `GEMINI_RETRY_BASE_SECONDS` | `2.0` | Base delay before retry |
 | `GEMINI_RETRY_MAX_SECONDS` | `30.0` | Maximum retry delay |
 
+### YouTube Downloads
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_YOUTUBE_DURATION` | `10800` (3h) | Max video length in seconds |
+| `YOUTUBE_COOKIES_FILE` | `""` | Path to `cookies.txt` exported from your browser |
+
+> **Exporting YouTube cookies** — yt-dlp may hit a "Sign in to confirm you're not a bot" wall.
+> To work around it, install a browser extension like *Get cookies.txt* (Chrome/Firefox),
+> log in to youtube.com, export the cookies, and set `YOUTUBE_COOKIES_FILE` to that file.
+> The backend uses it before falling back to anonymous extraction strategies.
+
 ### Performance Tips
 
 - **Low VRAM GPU:** `WHISPER_MODEL=small` + `WHISPER_COMPUTE_TYPE=float16`
