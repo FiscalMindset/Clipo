@@ -19,6 +19,7 @@ audio/
 transcripts/
 clips/
 temp/
+users.json
 
 # IDE
 .vscode/
