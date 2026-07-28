@@ -80,7 +80,7 @@ export default function UploadScreen({ onProcessingStart, onNavigate, onVisitJob
   const input = useRef(null);
 
   useEffect(() => {
-    getConfig().then((cfg) => { if (cfg) setBackendConfig(cfg); }).catch(() => {});
+    getConfig().then((cfg) => { if (cfg) setBackendConfig(cfg); }).catch(() => { });
   }, []);
 
   const selectFile = useCallback((nextFile) => {
