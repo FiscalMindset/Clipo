@@ -90,7 +90,21 @@ MAX_YOUTUBE_DURATION = 3 * 60 * 60  # 3 hours in seconds
 
 # --- Auth / OAuth ---
 import secrets
-JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))
+_SECRET_FILE = BACKEND_DIR / ".jwt_secret"
+
+
+def _load_or_create_secret() -> str:
+    env_val = os.getenv("JWT_SECRET")
+    if env_val:
+        return env_val
+    if _SECRET_FILE.exists():
+        return _SECRET_FILE.read_text().strip()
+    secret = secrets.token_hex(32)
+    _SECRET_FILE.write_text(secret)
+    return secret
+
+
+JWT_SECRET = _load_or_create_secret()
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24 * 7  # 7 days
 

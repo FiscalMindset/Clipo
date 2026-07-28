@@ -445,7 +445,7 @@ All settings are read from `backend/.env`. Defaults work out of the box for loca
 | `GOOGLE_CLIENT_SECRET` | `""` | Google OAuth client secret |
 | `FRONTEND_URL` | `http://localhost:5173` | Where to redirect after OAuth |
 | `BACKEND_URL` | `http://localhost:8001` | Backend URL for OAuth redirect_uri |
-| `JWT_SECRET` | random | Secret for signing JWT tokens |
+| `JWT_SECRET` | auto | Auto-generated on first start and persisted to `.jwt_secret`. Sessions survive restarts automatically. Set via env to override |
 
 ### Retry / Resilience
 

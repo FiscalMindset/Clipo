@@ -20,6 +20,7 @@ transcripts/
 clips/
 temp/
 users.json
+.jwt_secret
 
 # IDE
 .vscode/
