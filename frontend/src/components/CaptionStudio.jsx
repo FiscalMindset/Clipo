@@ -3,14 +3,15 @@ import { motion } from 'framer-motion';
 import { getStaticUrl } from '../lib/api';
 
 const PRESETS = [
-  { id: 'bold_white', name: 'Bold White', trend: '#1', sample: 'BOLD' },
-  { id: 'karaoke_yellow', name: 'Karaoke Yellow', trend: '#2', sample: 'KARAOKE' },
-  { id: 'minimal', name: 'Minimalist', sample: 'Clean' },
+  { id: 'classic', name: 'Classic', trend: '#1', sample: 'CLASSIC', color: 'text-white' },
+  { id: 'neon', name: 'Neon', trend: '#2', sample: 'NEON', color: 'text-yellow-400' },
+  { id: 'bold', name: 'Bold', sample: 'BOLD', color: 'text-white' },
+  { id: 'minimal', name: 'Minimal', sample: 'Clean', color: 'text-white/90' },
 ];
 
 export default function CaptionStudio({ clip, onClose, onSave }) {
   const [activeTab, setActiveTab] = useState('presets');
-  const [activePreset, setActivePreset] = useState('bold_white');
+  const [activePreset, setActivePreset] = useState('classic');
   const [position, setPosition] = useState('bottom');
 
   return (
@@ -65,8 +66,9 @@ export default function CaptionStudio({ clip, onClose, onSave }) {
                       }`}
                   >
                     <div className="h-24 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-800 to-black flex items-center justify-center">
-                      <span className={`text-2xl font-black italic tracking-tighter ${preset.id === 'bold_white' ? 'text-white drop-shadow-md' :
-                          preset.id === 'karaoke_yellow' ? 'text-yellow-400 drop-shadow-md' :
+                      <span className={`text-2xl font-black italic tracking-tighter ${preset.id === 'classic' ? 'text-white drop-shadow-md' :
+                          preset.id === 'neon' ? 'text-yellow-400 drop-shadow-md' :
+                            preset.id === 'bold' ? 'text-white drop-shadow-md' :
                             'text-white/90 font-medium'
                         }`}>
                         {preset.sample}
@@ -164,18 +166,18 @@ export default function CaptionStudio({ clip, onClose, onSave }) {
         {/* Right Column: Live Phone Preview */}
         <div className="w-full lg:w-[320px] flex-none flex justify-center py-4 lg:py-0">
 
-          <div className="relative w-[280px] h-[580px] bg-[#050506] rounded-[50px] border-[8px] border-[#2a2a30] shadow-2xl shadow-black/90 overflow-hidden ring-1 ring-white/10 flex flex-col">
+          <div className="relative w-full max-w-[280px] h-[520px] sm:h-[580px] bg-[#050506] rounded-[42px] sm:rounded-[50px] border-[6px] sm:border-[8px] border-[#2a2a30] shadow-2xl shadow-black/90 overflow-hidden ring-1 ring-white/10 flex flex-col">
 
             {/* Inner Titanium Bezel Reflection */}
-            <div className="absolute inset-0 rounded-[42px] border border-white/5 pointer-events-none z-50" />
+            <div className="absolute inset-0 rounded-[36px] sm:rounded-[42px] border border-white/5 pointer-events-none z-50" />
 
             {/* Dynamic Island */}
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-[90px] h-[26px] bg-black rounded-full z-40 flex items-center justify-end px-2 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]">
-              <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-br from-indigo-900 to-black mr-1" />
+            <div className="absolute top-2 sm:top-3 left-1/2 -translate-x-1/2 w-[70px] sm:w-[90px] h-[22px] sm:h-[26px] bg-black rounded-full z-40 flex items-center justify-end px-2 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]">
+              <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-gradient-to-br from-indigo-900 to-black mr-1" />
             </div>
 
             {/* Video Placeholder Area (9:16 aspect) */}
-            <div className="absolute inset-0 bg-black z-0 flex flex-col items-center justify-center overflow-hidden rounded-[42px]">
+            <div className="absolute inset-0 bg-black z-0 flex flex-col items-center justify-center overflow-hidden rounded-[36px] sm:rounded-[42px]">
               {clip ? (
                 <video 
                   src={getStaticUrl(clip.video_url)} 
@@ -202,8 +204,9 @@ export default function CaptionStudio({ clip, onClose, onSave }) {
             >
               {/* The actual caption styling logic based on preset */}
               <div className={`text-center transition-all duration-300 pointer-events-none
-              ${activePreset === 'bold_white' ? 'font-black text-2xl uppercase text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]' : ''}
-              ${activePreset === 'karaoke_yellow' ? 'font-black text-3xl uppercase text-yellow-400 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]' : ''}
+              ${activePreset === 'classic' ? 'font-black text-2xl uppercase text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]' : ''}
+              ${activePreset === 'neon' ? 'font-black text-3xl uppercase text-yellow-400 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]' : ''}
+              ${activePreset === 'bold' ? 'font-black text-3xl uppercase text-white drop-shadow-[0_6px_6px_rgba(0,0,0,0.9)]' : ''}
               ${activePreset === 'minimal' ? 'font-medium text-lg text-white/90 bg-black/60 px-4 py-1.5 rounded-lg backdrop-blur-md' : ''}
             `}>
                 Drag to position

@@ -40,6 +40,16 @@ class StepInfo(BaseModel):
     message: Optional[str] = None
 
 
+class AIUsageInfo(BaseModel):
+    """Tracks AI API usage for display in the frontend."""
+    provider: str = ""
+    model: str = ""
+    prompt_tokens_est: int = 0
+    completion_tokens_est: int = 0
+    total_tokens_est: int = 0
+    reason: str = ""
+
+
 class ProcessingStatus(BaseModel):
     job_id: str
     status: JobStatus
@@ -50,10 +60,12 @@ class ProcessingStatus(BaseModel):
     source_type: str = "file"
     created_at: datetime
     duration: Optional[float] = None
+    ai_usage: Optional[AIUsageInfo] = None
+    clips_generated: int = 0
 
 
 class ClipTimestamp(BaseModel):
-    """Schema for Gemini AI response — describes one interesting clip."""
+    """Schema for AI response — describes one interesting clip."""
     title: str = Field(..., description="Short, catchy title for the clip")
     start: float = Field(..., description="Start time in seconds")
     end: float = Field(..., description="End time in seconds")

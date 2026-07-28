@@ -29,7 +29,10 @@ def _extract_audio_sync(video_path: str, output_path: str) -> None:
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
-            "FFmpeg executable was not found. Install FFmpeg and add its bin directory to PATH."
+            "FFmpeg is not installed or not on PATH. Install it with:\n"
+            "  macOS:  brew install ffmpeg\n"
+            "  Ubuntu: sudo apt install ffmpeg\n"
+            "  Windows: winget install ffmpeg"
         ) from exc
     if result.returncode != 0:
         last_line = result.stderr.strip().split("\n")[-1]

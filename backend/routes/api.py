@@ -6,7 +6,7 @@ import asyncio
 import tempfile
 import zipfile
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
@@ -26,17 +26,75 @@ from services.pipeline_service import (
     get_job,
     get_processing_status,
     run_pipeline,
+    get_user_jobs,
     jobs,
 )
 from services.caption_service import generate_captioned_clip, list_styles
+from routes.auth import get_current_user, require_user
 
 
 router = APIRouter(prefix="/api")
 
 
+@router.get("/health")
+async def health_check():
+    """Check if the backend is running and healthy."""
+    from config import GEMINI_API_KEY, NVIDIA_API_KEY, AI_PROVIDER
+
+    if AI_PROVIDER == "nvidia" or (not AI_PROVIDER and NVIDIA_API_KEY):
+        provider = "nvidia"
+        configured = bool(NVIDIA_API_KEY)
+    elif GEMINI_API_KEY:
+        provider = "gemini"
+        configured = bool(GEMINI_API_KEY)
+    else:
+        provider = "none"
+        configured = False
+
+    return {
+        "status": "ok",
+        "ai_provider": provider,
+        "ai_configured": configured,
+        "gemini_configured": bool(GEMINI_API_KEY),
+        "nvidia_configured": bool(NVIDIA_API_KEY),
+    }
+
+
+@router.get("/config")
+async def get_config():
+    """Return public config info the frontend needs."""
+    from config import (
+        GEMINI_API_KEY, NVIDIA_API_KEY, AI_PROVIDER,
+        GEMINI_MODEL, NVIDIA_NIM_MODEL,
+        MAX_UPLOAD_SIZE_GB, MAX_YOUTUBE_DURATION, MIN_CLIP_DURATION, MAX_CLIP_DURATION,
+    )
+
+    if AI_PROVIDER == "nvidia" or (not AI_PROVIDER and NVIDIA_API_KEY):
+        active_provider = "nvidia"
+    elif GEMINI_API_KEY:
+        active_provider = "gemini"
+    else:
+        active_provider = "none"
+
+    return {
+        "active_provider": active_provider,
+        "gemini_configured": bool(GEMINI_API_KEY),
+        "nvidia_configured": bool(NVIDIA_API_KEY),
+        "gemini_model": GEMINI_MODEL,
+        "nvidia_model": NVIDIA_NIM_MODEL,
+        "max_upload_gb": MAX_UPLOAD_SIZE_GB,
+        "max_youtube_duration_s": MAX_YOUTUBE_DURATION,
+        "min_clip_duration": MIN_CLIP_DURATION,
+        "max_clip_duration": MAX_CLIP_DURATION,
+    }
+
+
 @router.post("/upload", response_model=UploadResponse)
-async def upload_video(file: UploadFile = File(...)):
+async def upload_video(request: Request, file: UploadFile = File(...)):
     """Upload a video file and create a processing job."""
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+
     job_id, file_path = await save_upload(file)
 
     create_job(
@@ -44,6 +102,7 @@ async def upload_video(file: UploadFile = File(...)):
         source_type="file",
         video_path=str(file_path),
         video_title=file.filename,
+        user_id=user_id,
     )
 
     return UploadResponse(
@@ -54,8 +113,11 @@ async def upload_video(file: UploadFile = File(...)):
 
 
 @router.post("/youtube", response_model=UploadResponse)
-async def submit_youtube_url(request: YouTubeRequest):
+async def submit_youtube_url(req: Request, request: YouTubeRequest):
     """Accept a YouTube URL and create a processing job."""
+    user = get_current_user(req)
+    user_id = user["id"] if user else None
+
     url = validate_youtube_url(request.url)
 
     # Generate job ID
@@ -67,6 +129,7 @@ async def submit_youtube_url(request: YouTubeRequest):
         source_type="youtube",
         youtube_url=url,
         video_title="YouTube Video",
+        user_id=user_id,
     )
 
     return UploadResponse(
@@ -77,11 +140,16 @@ async def submit_youtube_url(request: YouTubeRequest):
 
 
 @router.post("/generate/{job_id}")
-async def start_processing(job_id: str):
+async def start_processing(request: Request, job_id: str):
     """Trigger the processing pipeline for a job."""
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if user_id and job.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if job["status"] not in (JobStatus.PENDING,):
         raise HTTPException(
@@ -99,20 +167,30 @@ async def start_processing(job_id: str):
 
 
 @router.get("/status/{job_id}", response_model=ProcessingStatus)
-async def get_status(job_id: str):
+async def get_status(request: Request, job_id: str):
     """Get current processing status for a job."""
-    status = get_processing_status(job_id)
-    if not status:
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+
+    job = get_job(job_id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if user_id and job.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    status = get_processing_status(job_id)
     return status
 
 
 @router.get("/jobs", response_model=list[ProcessingStatus])
-async def get_jobs():
-    """Get all processing jobs."""
+async def get_jobs(request: Request):
+    """Get all processing jobs for the current user (or all if unauthenticated)."""
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+
     result = []
-    for job_id in jobs:
-        status = get_processing_status(job_id)
+    for jid in get_user_jobs(user_id):
+        status = get_processing_status(jid)
         if status:
             result.append(status)
     result.sort(key=lambda x: x["created_at"], reverse=True)
@@ -120,11 +198,16 @@ async def get_jobs():
 
 
 @router.get("/clips/{job_id}", response_model=list[ClipInfo])
-async def get_clips(job_id: str):
+async def get_clips(request: Request, job_id: str):
     """Get all generated clips for a job."""
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if user_id and job.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if job["status"] != JobStatus.COMPLETED:
         raise HTTPException(
@@ -142,16 +225,21 @@ async def caption_styles():
 
 
 @router.post("/captions/{job_id}/{clip_id}")
-async def create_captions(job_id: str, clip_id: int, style: str = "classic"):
+async def create_captions(request: Request, job_id: str, clip_id: int, style: str = "classic"):
     """
     Burn word-level captions into a clip using the requested style.
 
     On-demand and additive: the original clip is untouched and the captioned
     version is returned separately. No AI call is made.
     """
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if user_id and job.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if job["status"] != JobStatus.COMPLETED:
         raise HTTPException(
@@ -197,11 +285,16 @@ async def download_clip(job_id: str, filename: str):
 
 
 @router.get("/download-all/{job_id}")
-async def download_all_clips(job_id: str):
+async def download_all_clips(request: Request, job_id: str):
     """Create a ZIP archive containing every generated clip for a job."""
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if user_id and job.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     if job["status"] != JobStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Clips are not ready to download yet")
 
