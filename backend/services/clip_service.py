@@ -39,6 +39,11 @@ def _generate_single_clip_sync(
     """Generate a single clip using FFmpeg (sync, runs in executor)."""
     duration = end - start
 
+    # Dynamic timeout: at least 120s, scaled by clip duration.
+    # `libx264 preset=fast` encodes at roughly 0.3–0.5× realtime on CPU,
+    # so a 2-minute clip can need 4+ minutes.
+    timeout = max(120, int(duration * 3 + 30))
+
     # Always produce browser-compatible MP4 clips. Stream-copying retains the
     # source audio codec (often Opus or an unsupported codec in downloaded
     # videos), which can leave an otherwise valid clip silent in the browser.
@@ -58,7 +63,7 @@ def _generate_single_clip_sync(
         "-movflags", "+faststart",
         "-y",
         clip_path,
-    ])
+    ], timeout=timeout)
 
     # Retry with a broadly available video encoder setting if the first encode
     # fails. Audio remains explicitly mapped and encoded as AAC in both paths.
@@ -77,7 +82,7 @@ def _generate_single_clip_sync(
             "-movflags", "+faststart",
             "-y",
             clip_path,
-        ])
+        ], timeout=timeout)
         if result.returncode != 0:
             last_line = result.stderr.strip().split("\n")[-1]
             raise RuntimeError(f"FFmpeg clip generation failed: {last_line}")

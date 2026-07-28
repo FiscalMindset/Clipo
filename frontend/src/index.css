@@ -3259,6 +3259,65 @@ body {
   color: #b496f8
 }
 
+.processing-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 30px 0
+}
+
+.ai-usage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  background: rgba(139, 92, 246, .1);
+  border-radius: 99px;
+  border: 1px solid rgba(139, 92, 246, .2);
+  font-size: 11px;
+  color: #c6abff
+}
+
+.ai-usage-badge svg {
+  width: 13px;
+  height: 13px;
+  margin-right: 3px
+}
+
+.ai-usage-provider,
+.ai-usage-tokens {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px
+}
+
+.ai-usage-tokens {
+  color: #9d99a7
+}
+
+.processing-clip-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  background: rgba(167, 139, 250, .08);
+  border-radius: 99px;
+  font-size: 11px;
+  color: #b5a9da
+}
+
+.processing-clip-count svg {
+  width: 13px;
+  height: 13px
+}
+
+.processing-stage-message {
+  font-size: 12px;
+  color: #9d9aa8;
+  line-height: 1.5
+}
+
 .processing-times span {
   font-size: 10px;
   display: flex;
@@ -3546,6 +3605,23 @@ body {
     grid-template-columns: 1fr
   }
 
+  .processing-ring {
+    width: 120px;
+    height: 120px
+  }
+
+  .processing-ring strong {
+    font-size: 28px
+  }
+
+  .processing-focus {
+    gap: 22px
+  }
+
+  .processing-stage h2 {
+    font-size: 22px
+  }
+
   .processing-timeline-section {
     margin-top: 55px
   }
@@ -3593,25 +3669,60 @@ body {
   }
 
   .processing-focus {
-    gap: 18px;
-    margin: 30px 0
+    gap: 14px;
+    margin: 24px 0
   }
 
   .processing-ring {
-    width: 96px;
-    height: 96px
+    width: 76px;
+    height: 76px;
+    padding: 5px;
+    box-shadow: 0 0 18px rgba(139, 92, 246, .15)
   }
 
   .processing-ring strong {
-    font-size: 22px
+    font-size: 17px
   }
 
   .processing-ring small {
-    font-size: 9px
+    font-size: 8px
   }
 
   .processing-stage h2 {
-    font-size: 20px
+    font-size: 18px;
+    margin: 4px 0
+  }
+
+  .processing-stage span {
+    font-size: 11px
+  }
+
+  .processing-stage-message {
+    font-size: 11px
+  }
+
+  .processing-stats-row {
+    gap: 6px
+  }
+
+  .ai-usage-badge {
+    font-size: 10px;
+    padding: 4px 10px
+  }
+
+  .ai-usage-badge svg {
+    width: 11px;
+    height: 11px
+  }
+
+  .processing-clip-count {
+    font-size: 10px;
+    padding: 4px 10px
+  }
+
+  .processing-clip-count svg {
+    width: 11px;
+    height: 11px
   }
 
   .processing-times {
