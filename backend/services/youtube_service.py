@@ -39,21 +39,16 @@ def _yt_dlp_strategies() -> list[list[str]]:
 
     YouTube increasingly throws a "Sign in to confirm you're not a bot" wall,
     which makes a plain download fail. We work around it by trying, in order:
-      1. A cookies.txt file if YOUTUBE_COOKIES_FILE is set (best: full auth).
-      2. The default client (fast path — works for most videos).
-      3. Alternate player clients (tv / web_safari / ios) that usually bypass
-         the bot wall without cookies.
+      1. TV client — the most reliable automated bypass without cookies.
+      2. TV + web_safari + ios — broader client fallback.
+      3. Default client — fast path when there's no bot wall.
     The first strategy that succeeds wins; if all fail we surface the last error.
     """
-    from config import YOUTUBE_COOKIES_FILE
-
-    strategies = []
-    if YOUTUBE_COOKIES_FILE:
-        strategies.append(["--cookies", YOUTUBE_COOKIES_FILE])
-    strategies.append([])  # default client
-    strategies.append(["--extractor-args", "youtube:player_client=tv,web_safari,ios"])
-    strategies.append(["--extractor-args", "youtube:player_client=web_safari"])
-    return strategies
+    return [
+        ["--extractor-args", "youtube:player_client=tv"],
+        ["--extractor-args", "youtube:player_client=tv,web_safari,ios"],
+        [],
+    ]
 
 
 def _yt_dlp_command(*args: str) -> list[str]:
