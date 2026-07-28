@@ -35,7 +35,7 @@ function Icon({ name, className = 'h-5 w-5' }) {
 const formatFileSize = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 const validYoutube = (value) => /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/|embed\/|v\/)|youtu\.be\/)[\w-]+/.test(value.trim());
 
-export default function UploadScreen({ onProcessingStart }) {
+export default function UploadScreen({ onProcessingStart, onLogout, user }) {
   const [activeTab, setActiveTab] = useState('file');
   const [file, setFile] = useState(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -75,7 +75,7 @@ export default function UploadScreen({ onProcessingStart }) {
   return <div className="dashboard-shell">
     <div className="dashboard-aura" />
     <div className="dashboard-frame">
-      <StudioHeader rightSlot={<button className="icon-button" aria-label="Settings"><Icon name="settings" /></button>} />
+      <StudioHeader rightSlot={<><span className="user-chip">{user?.name || user?.email || 'Account'}</span><button className="auth-logout-button" type="button" onClick={onLogout}>Log out</button><button className="icon-button" aria-label="Settings"><Icon name="settings" /></button></>} />
       <main>
         <div className="workspace-grid">
           <section className="upload-workspace">

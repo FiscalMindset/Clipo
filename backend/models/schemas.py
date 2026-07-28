@@ -60,6 +60,20 @@ class ClipTimestamp(BaseModel):
     reason: str = Field(..., description="Why this moment is interesting")
 
 
+class TranscriptSegment(BaseModel):
+    """One time-coded slice of a transcript."""
+    start: float = Field(..., description="Start time in seconds")
+    end: float = Field(..., description="End time in seconds")
+    text: str = Field(..., description="Transcript text for this segment")
+
+
+class TranscriptResponse(BaseModel):
+    """Schema returned by transcription backends."""
+    text: str = Field(..., description="Full transcript text")
+    segments: list[TranscriptSegment] = Field(default_factory=list)
+    language: str = Field(default="en", description="Detected transcript language")
+
+
 class ClipInfo(BaseModel):
     """Metadata for a generated clip, returned to the frontend."""
     id: int

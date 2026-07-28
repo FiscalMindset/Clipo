@@ -7,7 +7,7 @@ import asyncio
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from faster_whisper import WhisperModel
+from typing import Any
 
 from config import AUDIO_DIR
 from models.schemas import JobStatus, StepInfo
@@ -90,7 +90,7 @@ def get_processing_status(job_id: str) -> dict | None:
     }
 
 
-async def run_pipeline(job_id: str, whisper_model: WhisperModel):
+async def run_pipeline(job_id: str, whisper_model: Any):
     """
     Run the full processing pipeline as a background task.
 

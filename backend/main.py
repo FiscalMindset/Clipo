@@ -5,6 +5,7 @@ Clipo AI — FastAPI Backend Entry Point.
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 # --- Add NVIDIA CUDA DLLs to PATH (required on Windows for ctranslate2/faster-whisper) ---
 # Must happen before any imports that load CUDA (ctranslate2, faster_whisper)
@@ -24,14 +25,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from faster_whisper import WhisperModel
 
-from config import WHISPER_MODEL, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE, CLIP_DIR
+from config import CLIP_DIR
 from routes.api import router as api_router
+from services.transcription_service import load_local_whisper_model
 
 
-# Global whisper model — loaded once on startup
-whisper_model: WhisperModel = None
+# Global whisper model — loaded once on startup when available.
+whisper_model: Any = None
 
 
 @asynccontextmanager
@@ -39,13 +40,11 @@ async def lifespan(app: FastAPI):
     """Load the Whisper model on startup, cleanup on shutdown."""
     global whisper_model
 
-    print(f"Loading Whisper model '{WHISPER_MODEL}' on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE})...")
-    whisper_model = WhisperModel(
-        WHISPER_MODEL,
-        device=WHISPER_DEVICE,
-        compute_type=WHISPER_COMPUTE_TYPE,
-    )
-    print("Whisper model loaded successfully!")
+    whisper_model = load_local_whisper_model()
+    if whisper_model is None:
+        print("Backend will use Gemini transcription fallback for uploads.")
+    else:
+        print("Whisper model loaded successfully!")
 
     yield
 

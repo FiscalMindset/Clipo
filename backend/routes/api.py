@@ -89,10 +89,10 @@ async def start_processing(job_id: str):
             detail=f"Job is already {job['status'].value}. Cannot start again."
         )
 
-    # Get the whisper model from app state
     from main import whisper_model
 
-    # Launch pipeline as a background task
+    # Launch pipeline as a background task. The transcription service will
+    # use the local model when available and fall back to Gemini otherwise.
     asyncio.create_task(run_pipeline(job_id, whisper_model))
 
     return {"message": "Processing started", "job_id": job_id}
