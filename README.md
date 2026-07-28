@@ -455,6 +455,12 @@ All settings are read from `backend/.env`. Defaults work out of the box for loca
 | `GEMINI_RETRY_BASE_SECONDS` | `2.0` | Base delay before retry |
 | `GEMINI_RETRY_MAX_SECONDS` | `30.0` | Maximum retry delay |
 
+### YouTube Downloads
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_YOUTUBE_DURATION` | `10800` (3h) | Max video length in seconds |
+
 ### Performance Tips
 
 - **Low VRAM GPU:** `WHISPER_MODEL=small` + `WHISPER_COMPUTE_TYPE=float16`
