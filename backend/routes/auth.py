@@ -2,8 +2,11 @@
 Auth Routes — Google OAuth 2.0 login/logout/session.
 """
 
+import json
+import os
 import httpx
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, HTTPException
@@ -29,8 +32,19 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 COOKIE_NAME = "clipo_session"
 
-# In-memory user store (swap for DB if persistence needed)
-users: dict[str, dict] = {}
+_USERS_FILE = Path(__file__).resolve().parent.parent / "users.json"
+
+
+def _load_users() -> dict[str, dict]:
+    if _USERS_FILE.exists():
+        raw = _USERS_FILE.read_text()
+        if raw.strip():
+            return json.loads(raw)
+    return {}
+
+
+def _save_users(users: dict[str, dict]) -> None:
+    _USERS_FILE.write_text(json.dumps(users, indent=2, default=str))
 
 
 def _create_jwt(user_id: str, email: str, name: str, picture: str) -> str:
@@ -62,6 +76,7 @@ def get_current_user(request: Request) -> dict | None:
     if not payload:
         return None
     user_id = payload.get("sub")
+    users = _load_users()
     if not user_id or user_id not in users:
         return None
     return users[user_id]
@@ -144,6 +159,7 @@ async def google_callback(code: str = None, error: str = None):
     picture = info.get("picture", "")
 
     # Upsert user
+    users = _load_users()
     user = {
         "id": google_id,
         "email": email,
@@ -153,6 +169,7 @@ async def google_callback(code: str = None, error: str = None):
         "last_login": datetime.now(timezone.utc),
     }
     users[google_id] = user
+    _save_users(users)
 
     # Create JWT session
     token = _create_jwt(google_id, email, name, picture)
