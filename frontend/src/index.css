@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+/* Touch-friendly defaults */
+html, body {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  overscroll-behavior-y: none;
+  text-size-adjust: 100%;
+}
+
+button, a, [role="button"] {
+  touch-action: manipulation;
+}
+
+input, textarea, select {
+  font-size: 16px;
+}
+
 .preview-overlay {
   position: fixed;
   z-index: 50;
@@ -1812,6 +1828,7 @@ body {
 
 .dashboard-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   background: #09090b;
   color: #f8f7ff;
   overflow: hidden;
@@ -1830,11 +1847,12 @@ body {
   z-index: 1;
   max-width: 1400px;
   margin: auto;
-  padding: 22px 40px 72px;
+  padding: max(22px, env(safe-area-inset-top)) 40px max(72px, calc(72px + env(safe-area-inset-bottom)));
 }
 
 .app-header {
-  height: 52px;
+  height: calc(52px + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2736,9 +2754,10 @@ body {
 /* Profile screen */
 .profile-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   background: #09090c;
   color: #f8f7fb;
-  padding: 24px 32px 72px;
+  padding: max(24px, env(safe-area-inset-top)) 32px max(72px, calc(72px + env(safe-area-inset-bottom)));
   max-width: 580px;
   margin: auto;
 }
@@ -2786,9 +2805,10 @@ body {
 /* Library screen */
 .library-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   background: #09090c;
   color: #f8f7fb;
-  padding: 24px 32px 72px;
+  padding: max(24px, env(safe-area-inset-top)) 32px max(72px, calc(72px + env(safe-area-inset-bottom)));
   max-width: 740px;
   margin: auto;
 }
@@ -2839,9 +2859,10 @@ body {
 /* Settings screen */
 .settings-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   background: #09090c;
   color: #f8f7fb;
-  padding: 24px 32px 72px;
+  padding: max(24px, env(safe-area-inset-top)) 32px max(72px, calc(72px + env(safe-area-inset-bottom)));
   max-width: 740px;
   margin: auto;
 }
@@ -3003,6 +3024,7 @@ body {
 /* Processing workspace */
 .processing-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   background: #09090c;
   color: #f8f7fb;
   position: relative
@@ -3018,7 +3040,7 @@ body {
 .processing-frame {
   max-width: 1170px;
   margin: auto;
-  padding: 24px 32px 72px;
+  padding: max(24px, env(safe-area-inset-top)) 32px max(72px, calc(72px + env(safe-area-inset-bottom)));
   position: relative
 }
 
