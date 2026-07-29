@@ -2652,6 +2652,20 @@ body {
   position: relative;
 }
 
+.user-avatar-button {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .user-avatar {
   width: 28px;
   height: 28px;
@@ -2662,7 +2676,8 @@ body {
   object-fit: cover;
 }
 
-.user-avatar:hover {
+.user-avatar-button:active .user-avatar,
+.user-avatar-button:focus-visible .user-avatar {
   border-color: #8b5cf6;
 }
 
@@ -2677,6 +2692,12 @@ body {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
   z-index: 100;
   padding: 8px;
+  animation: userDropdownIn .14s ease-out;
+}
+
+@keyframes userDropdownIn {
+  from { opacity: 0; transform: translateY(-4px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .user-dropdown-header {
@@ -2713,20 +2734,28 @@ body {
 }
 
 .user-dropdown button {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
   text-align: left;
-  padding: 8px 10px;
+  padding: 0 12px;
+  min-height: 40px;
   border: 0;
   background: none;
   color: #d6d3df;
-  font: 500 12px var(--font-sans);
+  font: 500 13px var(--font-sans);
   border-radius: 8px;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .12s ease;
 }
 
 .user-dropdown button:hover {
   background: #26232c;
+}
+
+.user-dropdown button:active {
+  background: #2f2c38;
 }
 
 .user-dropdown button.danger {

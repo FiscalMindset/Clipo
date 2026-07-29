@@ -1,12 +1,9 @@
 import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { logout } from '../lib/auth';
+import UserMenu from './UserMenu';
 import ClipoMark from './ClipoMark';
 
 export default function StudioHeader({ activeTab = 'create', onNavigate, rightSlot = null }) {
-  const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
 
   const handleNav = (tab) => {
     setMenuOpen(false);
@@ -23,34 +20,7 @@ export default function StudioHeader({ activeTab = 'create', onNavigate, rightSl
       </nav>
       <div className="header-actions">
         <span className="local-badge"><i />Local-first</span>
-        {user && (
-          <div className="user-menu" onMouseEnter={() => setProfileOpen(true)} onMouseLeave={() => setProfileOpen(false)}>
-            <img
-              className="user-avatar"
-              src={user.picture}
-              alt={user.name}
-              referrerPolicy="no-referrer"
-              onClick={() => handleNav('profile')}
-              style={{ cursor: 'pointer' }}
-            />
-            {profileOpen && (
-              <div className="user-dropdown">
-                <div className="user-dropdown-header">
-                  <img src={user.picture} alt="" referrerPolicy="no-referrer" />
-                  <div>
-                    <strong>{user.name}</strong>
-                    <span>{user.email}</span>
-                  </div>
-                </div>
-                <div className="user-dropdown-divider" />
-                <button onClick={() => handleNav('profile')}>Profile</button>
-                <button onClick={() => handleNav('settings')}>Settings</button>
-                <div className="user-dropdown-divider" />
-                <button className="danger" onClick={logout}>Sign out</button>
-              </div>
-            )}
-          </div>
-        )}
+        <UserMenu onNavigate={onNavigate} />
         <button className="mobile-menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
             {menuOpen ? (
