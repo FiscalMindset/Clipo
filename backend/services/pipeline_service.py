@@ -4,6 +4,7 @@ Manages job state and coordinates all services.
 """
 
 import asyncio
+import json
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,8 +19,26 @@ from services.clip_service import generate_clips
 from services.youtube_service import download_video
 
 
-# In-memory job store (single-user, no persistence needed)
+# Persisted job store
 jobs: dict[str, dict] = {}
+
+_JOBS_FILE = Path(__file__).resolve().parent.parent / "jobs.json"
+
+
+def _save_jobs() -> None:
+    _JOBS_FILE.write_text(json.dumps(jobs, indent=2, default=str))
+
+
+def _load_jobs() -> None:
+    if _JOBS_FILE.exists():
+        raw = _JOBS_FILE.read_text()
+        if raw.strip():
+            stored = json.loads(raw)
+            jobs.clear()
+            jobs.update(stored)
+
+
+_load_jobs()
 
 
 def create_job(job_id: str, source_type: str, **kwargs) -> dict:
@@ -41,6 +60,7 @@ def create_job(job_id: str, source_type: str, **kwargs) -> dict:
         "ai_usage": None,
     }
     jobs[job_id] = job
+    _save_jobs()
     return job
 
 
@@ -226,6 +246,8 @@ async def run_pipeline(job_id: str, whisper_model: Any):
         job["status"] = JobStatus.COMPLETED
         job["current_step"] = "Complete"
 
+        _save_jobs()
+
         # --- Cleanup: remove temporary audio file ---
         try:
             audio_path.unlink(missing_ok=True)
@@ -244,4 +266,5 @@ async def run_pipeline(job_id: str, whisper_model: Any):
                 step["message"] = str(e)
                 break
 
+        _save_jobs()
         traceback.print_exc()
