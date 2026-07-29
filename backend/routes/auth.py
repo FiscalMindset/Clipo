@@ -2,9 +2,12 @@
 Auth Routes — Google OAuth 2.0 login/logout/session.
 """
 
-import httpx
+import json
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
+
+import httpx
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -28,6 +31,21 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 COOKIE_NAME = "clipo_session"
+
+_USERS_FILE = Path(__file__).resolve().parent.parent / "users.json"
+
+
+def _load_users() -> dict[str, dict]:
+    if _USERS_FILE.exists():
+        raw = _USERS_FILE.read_text()
+        if raw.strip():
+            return json.loads(raw)
+    return {}
+
+
+def _save_users(users: dict[str, dict]) -> None:
+    _USERS_FILE.write_text(json.dumps(users, indent=2, default=str))
+
 
 # In-memory user store (swap for DB if persistence needed)
 users: dict[str, dict] = {}
