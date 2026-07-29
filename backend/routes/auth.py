@@ -144,12 +144,16 @@ async def google_callback(code: str = None, error: str = None):
     picture = info.get("picture", "")
 
     # Upsert user
+    users = _load_users()
+    existing = users.get(google_id, {})
     user = {
         "id": google_id,
         "email": email,
         "name": name,
+        "display_name": existing.get("display_name", ""),
+        "bio": existing.get("bio", ""),
         "picture": picture,
-        "created_at": users.get(google_id, {}).get("created_at", datetime.now(timezone.utc)),
+        "created_at": existing.get("created_at", datetime.now(timezone.utc)),
         "last_login": datetime.now(timezone.utc),
     }
     users[google_id] = user
@@ -182,7 +186,63 @@ async def get_me(request: Request):
         "id": user["id"],
         "email": user["email"],
         "name": user["name"],
+        "display_name": user.get("display_name", ""),
+        "bio": user.get("bio", ""),
         "picture": user["picture"],
+        "created_at": user["created_at"],
+    }
+
+
+@router.put("/profile")
+async def update_profile(request: Request, body: dict):
+    """Update display name and bio for the authenticated user."""
+    user = require_user(request)
+    users = _load_users()
+    uid = user["id"]
+
+    if "display_name" in body:
+        users[uid]["display_name"] = body["display_name"][:60]
+    if "bio" in body:
+        users[uid]["bio"] = body["bio"][:300]
+
+    _save_users(users)
+    return {"message": "Profile updated"}
+
+
+@router.get("/stats")
+async def get_stats(request: Request):
+    """Return usage statistics for the authenticated user."""
+    user = require_user(request)
+
+    from services.pipeline_service import jobs, get_user_jobs
+    from config import CLIP_DIR
+    from models.schemas import JobStatus
+
+    uid = user["id"]
+    user_jobs = get_user_jobs(uid)
+
+    total_jobs = len(user_jobs)
+    total_clips = 0
+    completed_jobs = 0
+    total_storage = 0
+
+    for jid in user_jobs:
+        job = jobs[jid]
+        clips = job.get("clips", [])
+        total_clips += len(clips)
+        if job.get("status") == JobStatus.COMPLETED:
+            completed_jobs += 1
+            for c in clips:
+                fpath = CLIP_DIR / jid / c["filename"]
+                if fpath.exists():
+                    total_storage += fpath.stat().st_size
+
+    return {
+        "total_jobs": total_jobs,
+        "completed_jobs": completed_jobs,
+        "total_clips": total_clips,
+        "storage_bytes": total_storage,
+        "storage_mb": round(total_storage / (1024 * 1024), 1),
     }
 
 

@@ -193,3 +193,21 @@ export async function generateCaptions(jobId, clipId, style) {
     { method: 'POST' },
   );
 }
+
+/**
+ * Update profile (display_name, bio).
+ */
+export async function updateProfile(data) {
+  return apiFetch(`${API_BASE}/auth/profile`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Get usage stats for the current user.
+ */
+export async function getUserStats() {
+  return apiFetch(`${API_BASE}/auth/stats`);
+}
