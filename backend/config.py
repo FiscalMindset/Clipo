@@ -87,6 +87,7 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi"}
 # --- YouTube Constraints ---
 MAX_YOUTUBE_DURATION = 3 * 60 * 60  # 3 hours in seconds
 
+
 # --- Auth / OAuth ---
 import secrets
 JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))
