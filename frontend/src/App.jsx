@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
-import { startProcessing } from './lib/api';
+import { startProcessing, getStatus } from './lib/api';
 import UploadScreen from './components/UploadScreen';
 import ProcessingScreen from './components/ProcessingScreen';
 import ResultsScreen from './components/ResultsScreen';
@@ -58,7 +58,22 @@ function Studio() {
     setNotifyWhenComplete(false);
   }, []);
 
-  const handleVisitJob = useCallback((jobId, jobDetails) => {
+  const handleVisitJob = useCallback(async (jobId, jobDetails) => {
+    try {
+      await getStatus(jobId);
+    } catch {
+      const key = 'clipo_job_history';
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const history = JSON.parse(raw);
+          const updated = history.filter((j) => j.jobId !== jobId);
+          localStorage.setItem(key, JSON.stringify(updated));
+        }
+      } catch { /* ignore */ }
+      setStartupError('This job is no longer available and has been removed from your history.');
+      return;
+    }
     setJobId(jobId);
     setJobDetails(jobDetails || {});
     setScreen(SCREEN.RESULTS);
