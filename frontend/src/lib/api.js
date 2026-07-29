@@ -194,9 +194,6 @@ export async function generateCaptions(jobId, clipId, style) {
   );
 }
 
-/**
- * Update profile (display_name, bio).
- */
 export async function updateProfile(data) {
   return apiFetch(`${API_BASE}/auth/profile`, {
     method: 'PUT',
@@ -205,9 +202,6 @@ export async function updateProfile(data) {
   });
 }
 
-/**
- * Get usage stats for the current user.
- */
 export async function getUserStats() {
   return apiFetch(`${API_BASE}/auth/stats`);
 }

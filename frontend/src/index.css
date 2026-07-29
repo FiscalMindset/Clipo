@@ -2632,22 +2632,6 @@ body {
   font-weight: 600;
 }
 
-/* Mobile menu toggle (hidden by default, visible on small screens) */
-.mobile-menu-toggle {
-  display: none;
-  background: none;
-  border: 0;
-  color: #d6d3df;
-  cursor: pointer;
-  padding: 6px;
-  border-radius: 8px;
-  transition: background 0.2s;
-}
-
-.mobile-menu-toggle:hover {
-  background: #26232c;
-}
-
 /* User menu / avatar */
 .user-menu {
   position: relative;
@@ -4232,10 +4216,13 @@ body {
 }
 
 @media (max-width: 540px) {
-  .ai-provider-badge {
-    width: 100%;
-    text-align: center;
-    justify-content: center;
+  .settings-shell {
+    padding: 16px 18px 40px;
+  }
+
+  .settings-header {
+    margin-top: 20px;
+    margin-bottom: 24px;
   }
 
   .settings-shell {
@@ -4268,6 +4255,12 @@ body {
   .library-header h1,
   .settings-header h1 {
     font-size: 24px;
+  }
+
+  .ai-provider-badge {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
   }
 }
 

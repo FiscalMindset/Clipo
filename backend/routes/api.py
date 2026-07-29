@@ -77,7 +77,7 @@ async def get_config():
         active_provider = "none"
 
     return {
-        "active_provider": active_provider,
+        "ai_provider": active_provider,
         "gemini_configured": bool(GEMINI_API_KEY),
         "nvidia_configured": bool(NVIDIA_API_KEY),
         "gemini_model": GEMINI_MODEL,

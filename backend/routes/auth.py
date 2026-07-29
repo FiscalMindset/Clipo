@@ -162,7 +162,7 @@ async def google_callback(code: str = None, error: str = None):
     name = info.get("name", "")
     picture = info.get("picture", "")
 
-    # Upsert user
+    # Upsert user with persistence
     users = _load_users()
     existing = users.get(google_id, {})
     user = {
@@ -176,6 +176,7 @@ async def google_callback(code: str = None, error: str = None):
         "last_login": datetime.now(timezone.utc),
     }
     users[google_id] = user
+    _save_users(users)
 
     # Create JWT session
     token = _create_jwt(google_id, email, name, picture)
