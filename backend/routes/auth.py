@@ -80,6 +80,7 @@ def get_current_user(request: Request) -> dict | None:
     if not payload:
         return None
     user_id = payload.get("sub")
+    users = _load_users()
     if not user_id or user_id not in users:
         return None
     return users[user_id]
