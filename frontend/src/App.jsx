@@ -10,6 +10,7 @@ import ProfileScreen from './components/ProfileScreen';
 import LibraryScreen from './components/LibraryScreen';
 import SettingsScreen from './components/SettingsScreen';
 import AuthCallback from './components/AuthCallback';
+import InstallPrompt from './components/InstallPrompt';
 
 const SCREEN = {
   UPLOAD: 'upload',
@@ -89,6 +90,7 @@ function Studio() {
 
   return (
     <>
+      <InstallPrompt />
       {startupError && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,

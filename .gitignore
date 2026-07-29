@@ -20,6 +20,11 @@ transcripts/
 clips/
 temp/
 
+# Runtime stores (auto-generated, recreated on first run)
+backend/jobs.json
+backend/users.json
+backend/.jwt_secret
+
 # IDE
 .vscode/
 .idea/
