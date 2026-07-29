@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
-import { startProcessing } from './lib/api';
+import { startProcessing, getStatus } from './lib/api';
 import UploadScreen from './components/UploadScreen';
 import ProcessingScreen from './components/ProcessingScreen';
 import ResultsScreen from './components/ResultsScreen';
@@ -10,6 +11,7 @@ import ProfileScreen from './components/ProfileScreen';
 import LibraryScreen from './components/LibraryScreen';
 import SettingsScreen from './components/SettingsScreen';
 import AuthCallback from './components/AuthCallback';
+import InstallPrompt from './components/InstallPrompt';
 
 const SCREEN = {
   UPLOAD: 'upload',
@@ -58,7 +60,22 @@ function Studio() {
     setNotifyWhenComplete(false);
   }, []);
 
-  const handleVisitJob = useCallback((jobId, jobDetails) => {
+  const handleVisitJob = useCallback(async (jobId, jobDetails) => {
+    try {
+      await getStatus(jobId);
+    } catch {
+      const key = 'clipo_job_history';
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const history = JSON.parse(raw);
+          const updated = history.filter((j) => j.jobId !== jobId);
+          localStorage.setItem(key, JSON.stringify(updated));
+        }
+      } catch { /* ignore */ }
+      setStartupError('This job is no longer available and has been removed from your history.');
+      return;
+    }
     setJobId(jobId);
     setJobDetails(jobDetails || {});
     setScreen(SCREEN.RESULTS);
@@ -78,17 +95,9 @@ function Studio() {
     }
   }, []);
 
-  const tabMap = {
-    [SCREEN.UPLOAD]: 'create',
-    [SCREEN.PROCESSING]: 'create',
-    [SCREEN.RESULTS]: 'create',
-    [SCREEN.PROFILE]: 'profile',
-    [SCREEN.LIBRARY]: 'library',
-    [SCREEN.SETTINGS]: 'settings',
-  };
-
   return (
     <>
+      <InstallPrompt />
       {startupError && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
@@ -108,32 +117,82 @@ function Studio() {
           </button>
         </div>
       )}
-      {screen === SCREEN.UPLOAD && (
-        <UploadScreen onProcessingStart={handleProcessingStart} onNavigate={handleNavigate} onVisitJob={handleVisitJob} />
-      )}
-      {screen === SCREEN.PROCESSING && (
-        <ProcessingScreen
-          jobId={jobId}
-          jobDetails={jobDetails}
-          notifyWhenComplete={notifyWhenComplete}
-          onNotificationChange={setNotifyWhenComplete}
-          onLeave={handleLeaveProcessing}
-          onComplete={handleComplete}
-          onError={handleError}
-        />
-      )}
-      {screen === SCREEN.RESULTS && (
-        <ResultsScreen jobId={jobId} onReset={handleReset} onNavigate={handleNavigate} />
-      )}
-      {screen === SCREEN.PROFILE && (
-        <ProfileScreen onNavigate={handleNavigate} />
-      )}
-      {screen === SCREEN.LIBRARY && (
-        <LibraryScreen onNavigate={handleNavigate} onVisitJob={handleVisitJob} />
-      )}
-      {screen === SCREEN.SETTINGS && (
-        <SettingsScreen onNavigate={handleNavigate} />
-      )}
+      <AnimatePresence mode="wait">
+        {screen === SCREEN.UPLOAD && (
+          <motion.div
+            key={SCREEN.UPLOAD}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 280, mass: 0.7 }}
+          >
+            <UploadScreen onProcessingStart={handleProcessingStart} onNavigate={handleNavigate} onVisitJob={handleVisitJob} />
+          </motion.div>
+        )}
+        {screen === SCREEN.PROCESSING && (
+          <motion.div
+            key={SCREEN.PROCESSING}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 280, mass: 0.7 }}
+          >
+            <ProcessingScreen
+              jobId={jobId}
+              jobDetails={jobDetails}
+              notifyWhenComplete={notifyWhenComplete}
+              onNotificationChange={setNotifyWhenComplete}
+              onLeave={handleLeaveProcessing}
+              onComplete={handleComplete}
+              onError={handleError}
+            />
+          </motion.div>
+        )}
+        {screen === SCREEN.RESULTS && (
+          <motion.div
+            key={SCREEN.RESULTS}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 280, mass: 0.7 }}
+          >
+            <ResultsScreen jobId={jobId} onReset={handleReset} onNavigate={handleNavigate} />
+          </motion.div>
+        )}
+        {screen === SCREEN.PROFILE && (
+          <motion.div
+            key={SCREEN.PROFILE}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 280, mass: 0.7 }}
+          >
+            <ProfileScreen onNavigate={handleNavigate} />
+          </motion.div>
+        )}
+        {screen === SCREEN.LIBRARY && (
+          <motion.div
+            key={SCREEN.LIBRARY}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 280, mass: 0.7 }}
+          >
+            <LibraryScreen onNavigate={handleNavigate} onVisitJob={handleVisitJob} />
+          </motion.div>
+        )}
+        {screen === SCREEN.SETTINGS && (
+          <motion.div
+            key={SCREEN.SETTINGS}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 280, mass: 0.7 }}
+          >
+            <SettingsScreen onNavigate={handleNavigate} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
