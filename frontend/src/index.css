@@ -2668,9 +2668,10 @@ body {
 
 .user-dropdown {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% - 2px);
   right: 0;
   min-width: 220px;
+  max-width: min(280px, calc(100vw - 24px));
   background: #16151a;
   border: 1px solid #26232c;
   border-radius: 12px;
@@ -2684,6 +2685,10 @@ body {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
+}
+
+.user-dropdown-header>div {
+  min-width: 0;
 }
 
 .user-dropdown-header img {
@@ -2704,6 +2709,9 @@ body {
   display: block;
   color: #777580;
   font-size: 11px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
 }
 
 .user-dropdown-divider {
@@ -2895,7 +2903,7 @@ body {
   gap: 12px;
 }
 
-.settings-card dl > div {
+.settings-card dl>div {
   display: flex;
   justify-content: space-between;
   align-items: center;
