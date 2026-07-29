@@ -1,5 +1,85 @@
 @import "tailwindcss";
 
+/* Bottom sheet — phone-first modal */
+.bottom-sheet-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(5, 5, 7, .72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+
+.bottom-sheet {
+  width: 100%;
+  max-width: 100%;
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+  background: #0b0a0f;
+  border-top-left-radius: 22px;
+  border-top-right-radius: 22px;
+  border-top: 1px solid rgba(255, 255, 255, .1);
+  display: flex;
+  flex-direction: column;
+  touch-action: pan-y;
+  will-change: transform;
+  box-shadow: 0 -22px 60px rgba(0, 0, 0, .55);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.bottom-sheet-grabber {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px 0 6px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.bottom-sheet-grabber:active { cursor: grabbing; }
+
+.bottom-sheet-grabber span {
+  width: 38px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .2);
+}
+
+.bottom-sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 16px 24px;
+}
+
+@media (min-width: 769px) {
+  .bottom-sheet-root {
+    align-items: center;
+    padding: 22px;
+  }
+
+  .bottom-sheet {
+    display: none;
+  }
+
+  .bottom-sheet-modal {
+    width: min(960px, 100%);
+    max-height: calc(100dvh - 44px);
+    overflow: auto;
+    background: #11101a;
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 22px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+    padding: 24px 28px;
+  }
+}
+
 .preview-overlay {
   position: fixed;
   z-index: 50;
