@@ -21,6 +21,8 @@ YOUTUBE_URL_PATTERN = re.compile(
     r"[\w\-]+"
 )
 
+_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+
 
 def validate_youtube_url(url: str) -> str:
     """Validate that the URL is a valid YouTube URL."""
@@ -31,6 +33,9 @@ def validate_youtube_url(url: str) -> str:
             detail="Invalid YouTube URL. Please provide a valid youtube.com or youtu.be link."
         )
     return url
+
+
+_UA_ARG = ["--user-agent", _UA]
 
 
 def _yt_dlp_strategies() -> list[list[str]]:

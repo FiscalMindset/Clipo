@@ -34,7 +34,7 @@ export default function StudioHeader({ activeTab = 'create', onNavigate, rightSl
               style={{ cursor: 'pointer' }}
             />
             {profileOpen && (
-              <div className="user-dropdown">
+              <div className="user-dropdown" onMouseEnter={() => setProfileOpen(true)} onMouseLeave={() => setProfileOpen(false)}>
                 <div className="user-dropdown-header">
                   <img src={user.picture} alt="" referrerPolicy="no-referrer" />
                   <div>

@@ -96,6 +96,7 @@ export function uploadVideo(file, onProgress) {
     formData.append('file', file);
 
     const xhr = new XMLHttpRequest();
+    xhr.withCredentials = true;
 
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable && onProgress) {

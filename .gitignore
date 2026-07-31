@@ -21,6 +21,8 @@ clips/
 temp/
 backend/jobs.json
 backend/users.json
+users.json
+.jwt_secret
 
 # IDE
 .vscode/

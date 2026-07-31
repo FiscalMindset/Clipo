@@ -47,10 +47,6 @@ def _save_users(users: dict[str, dict]) -> None:
     _USERS_FILE.write_text(json.dumps(users, indent=2, default=str))
 
 
-# In-memory user store (swap for DB if persistence needed)
-users: dict[str, dict] = {}
-
-
 def _create_jwt(user_id: str, email: str, name: str, picture: str) -> str:
     payload = {
         "sub": user_id,
