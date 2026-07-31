@@ -45,23 +45,31 @@ def _yt_dlp_strategies() -> list[list[str]]:
       4. TV + web_safari + ios — broader client fallback.
       5. Default client — fast path when there's no bot wall.
     The first strategy that succeeds wins; if all fail we surface the last error.
+
+    Every strategy also enables ``--remote-components ejs:github``. Recent
+    YouTube builds require solving JS challenges (signature + n-parameter);
+    yt-dlp needs a JavaScript runtime (deno/node, installed in the Docker
+    image) plus its EJS solver-script distribution, which is downloaded from
+    GitHub and cached. Without this, only images resolve and the format
+    request fails.
     """
+    base = ["--remote-components", "ejs:github"]
     strategies: list[list[str]] = []
     if YOUTUBE_COOKIES_FILE:
-        strategies.append(["--cookies", YOUTUBE_COOKIES_FILE])
+        strategies.append([*base, "--cookies", YOUTUBE_COOKIES_FILE])
     strategies.extend([
-        ["--cookies-from-browser", "chrome"],
-        ["--cookies-from-browser", "edge"],
-        ["--cookies-from-browser", "brave"],
-        ["--extractor-args", "youtube:player_client=tv"],
-        ["--extractor-args", "youtube:player_client=tv,web_safari,ios"],
+        [*base, "--cookies-from-browser", "chrome"],
+        [*base, "--cookies-from-browser", "edge"],
+        [*base, "--cookies-from-browser", "brave"],
+        [*base, "--extractor-args", "youtube:player_client=tv"],
+        [*base, "--extractor-args", "youtube:player_client=tv,web_safari,ios"],
     ])
     if YOUTUBE_COOKIES_FILE:
         strategies.append(
-            ["--extractor-args", "youtube:player_client=tv,web_safari,ios",
+            [*base, "--extractor-args", "youtube:player_client=tv,web_safari,ios",
              "--cookies", YOUTUBE_COOKIES_FILE]
         )
-    strategies.append([])
+    strategies.append([*base])
     return strategies
 
 
