@@ -2760,6 +2760,7 @@ body {
   font: 600 24px var(--font-sans);
   letter-spacing: -0.03em;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .profile-email {
@@ -2921,10 +2922,18 @@ body {
   padding: 8px 0;
   font-size: 14px;
   border-bottom: 1px solid #1a1a1f;
+  gap: 4px 12px;
+  flex-wrap: wrap;
 }
 
 .profile-account-row span:first-child {
   color: #777580;
+}
+
+.profile-account-row span:last-child {
+  overflow-wrap: anywhere;
+  text-align: right;
+  min-width: 0;
 }
 
 .profile-actions {
@@ -4213,6 +4222,14 @@ body {
   .settings-header {
     margin-top: 28px;
   }
+
+  .profile-shell {
+    padding: 0 0 64px;
+  }
+
+  .profile-card {
+    margin-top: 24px;
+  }
 }
 
 @media (max-width: 540px) {
@@ -4250,6 +4267,16 @@ body {
 
   .profile-stats {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .profile-edit-actions {
+    flex-direction: column;
+  }
+
+  .profile-edit-actions .generate-button,
+  .profile-edit-actions .profile-cancel {
+    width: 100%;
+    text-align: center;
   }
 
   .library-header h1,
