@@ -64,7 +64,9 @@ export async function getCurrentUser() {
  * Redirect to Google OAuth login.
  */
 export function loginWithGoogle() {
-  window.location.href = `${API_BASE}/auth/google`;
+  const state = window.location.origin;
+  const sep = API_BASE.includes('?') ? '&' : '?';
+  window.location.href = `${API_BASE}/auth/google${sep}state=${encodeURIComponent(state)}`;
 }
 
 /**

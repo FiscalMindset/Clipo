@@ -27,7 +27,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from config import CLIP_DIR, FRONTEND_URL, GEMINI_API_KEY
+from config import CLIP_DIR, FRONTEND_URLS, GEMINI_API_KEY
 from routes.api import router as api_router
 from routes.auth import router as auth_router
 from services.transcription_service import load_local_whisper_model
@@ -97,9 +97,10 @@ app = FastAPI(
 # so allow a range of local dev ports on both localhost and 127.0.0.1.
 _DEV_PORTS = [3000, 4173, 5173, 5174, 5175, 5176, 5177, 5178, 5179, 5180, 8080]
 _DEV_ORIGINS = [f"http://localhost:{p}" for p in _DEV_PORTS] + [f"http://127.0.0.1:{p}" for p in _DEV_PORTS]
-_PRODUCTION_ORIGINS = []
-if FRONTEND_URL and not FRONTEND_URL.startswith(("http://localhost", "http://127.0.0.1")):
-    _PRODUCTION_ORIGINS.append(FRONTEND_URL)
+_PRODUCTION_ORIGINS = [
+    u for u in FRONTEND_URLS
+    if not u.startswith(("http://localhost", "http://127.0.0.1"))
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_DEV_ORIGINS + _PRODUCTION_ORIGINS,

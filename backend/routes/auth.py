@@ -16,7 +16,7 @@ from jose import jwt, JWTError
 from config import (
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
-    FRONTEND_URL,
+    FRONTEND_URLS,
     BACKEND_URL,
     JWT_SECRET,
     JWT_ALGORITHM,
@@ -107,10 +107,19 @@ def require_user(request: Request) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/google")
-async def google_login():
-    """Redirect to Google's OAuth consent screen."""
+async def google_login(state: str = None):
+    """Redirect to Google's OAuth consent screen.
+
+    The `state` query param records which frontend origin started the login so
+    the callback can redirect the user back to that origin. Defaults to the
+    first configured frontend URL.
+    """
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=500, detail="Google OAuth not configured")
+
+    origin = FRONTEND_URLS[0]
+    if state and state in FRONTEND_URLS:
+        origin = state
 
     params = {
         "client_id": GOOGLE_CLIENT_ID,
@@ -119,17 +128,19 @@ async def google_login():
         "scope": "openid email profile",
         "access_type": "offline",
         "prompt": "select_account",
+        "state": origin,
     }
     return RedirectResponse(url=f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
 
 
 @router.get("/google/callback")
-async def google_callback(code: str = None, error: str = None):
+async def google_callback(code: str = None, error: str = None, state: str = None):
     """Exchange Google auth code for tokens, create session, redirect to app."""
+    origin = state if (state and state in FRONTEND_URLS) else FRONTEND_URLS[0]
     if error:
-        return RedirectResponse(url=f"{FRONTEND_URL}?error={error}")
+        return RedirectResponse(url=f"{origin}?error={error}")
     if not code:
-        return RedirectResponse(url=f"{FRONTEND_URL}?error=no_code")
+        return RedirectResponse(url=f"{origin}?error=no_code")
 
     # Exchange code for tokens
     async with httpx.AsyncClient() as client:
@@ -146,12 +157,12 @@ async def google_callback(code: str = None, error: str = None):
         )
 
     if token_resp.status_code != 200:
-        return RedirectResponse(url=f"{FRONTEND_URL}?error=token_exchange_failed")
+        return RedirectResponse(url=f"{origin}?error=token_exchange_failed")
 
     token_data = token_resp.json()
     access_token = token_data.get("access_token")
     if not access_token:
-        return RedirectResponse(url=f"{FRONTEND_URL}?error=no_access_token")
+        return RedirectResponse(url=f"{origin}?error=no_access_token")
 
     # Fetch user info from Google
     async with httpx.AsyncClient() as client:
@@ -162,7 +173,7 @@ async def google_callback(code: str = None, error: str = None):
         )
 
     if userinfo_resp.status_code != 200:
-        return RedirectResponse(url=f"{FRONTEND_URL}?error=userinfo_failed")
+        return RedirectResponse(url=f"{origin}?error=userinfo_failed")
 
     info = userinfo_resp.json()
     google_id = info["sub"]
@@ -190,14 +201,14 @@ async def google_callback(code: str = None, error: str = None):
     token = _create_jwt(google_id, email, name, picture)
 
     # Set cookie and redirect.
-    is_https = FRONTEND_URL.startswith("https")
+    is_https = origin.startswith("https")
     # Cross-origin production (frontend and backend on different hosts) requires
     # SameSite=None + Secure, otherwise the browser drops the cookie on API calls.
     _same_site = "none" if is_https else "lax"
     # The cookie alone is unreliable across origins (third-party cookie blocking),
     # so we also hand the JWT to the frontend via the URL fragment. The frontend
     # stores it in localStorage and sends it as an Authorization: Bearer header.
-    callback_path = FRONTEND_URL.rstrip("/") + "/auth/callback#token=" + quote(token, safe="")
+    callback_path = origin.rstrip("/") + "/auth/callback#token=" + quote(token, safe="")
     response = RedirectResponse(url=callback_path, status_code=302)
     response.set_cookie(
         key=COOKIE_NAME,

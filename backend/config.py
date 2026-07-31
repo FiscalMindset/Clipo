@@ -103,5 +103,8 @@ JWT_EXPIRE_HOURS = 24 * 7  # 7 days
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+# Comma-separated list of allowed frontend origins (CORS + OAuth callback
+# redirect targets). Defaults to just FRONTEND_URL for backward compatibility.
+FRONTEND_URLS = [u.strip() for u in os.getenv("FRONTEND_URLS", FRONTEND_URL).split(",") if u.strip()]
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8001")
 SESSION_COOKIE_SECRET = os.getenv("SESSION_COOKIE_SECRET", secrets.token_hex(32))
