@@ -5,7 +5,7 @@ Auth Routes — Google OAuth 2.0 login/logout/session.
 import json
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 
 import httpx
 
@@ -72,8 +72,16 @@ def _decode_jwt(token: str) -> dict | None:
 
 
 def get_current_user(request: Request) -> dict | None:
-    """Extract current user from session cookie. Returns None if unauthenticated."""
-    token = request.cookies.get(COOKIE_NAME)
+    """Extract current user from session cookie OR Authorization Bearer token.
+
+    Returns None if unauthenticated.
+    """
+    token = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.cookies.get(COOKIE_NAME)
     if not token:
         return None
     payload = _decode_jwt(token)
@@ -181,15 +189,22 @@ async def google_callback(code: str = None, error: str = None):
     # Create JWT session
     token = _create_jwt(google_id, email, name, picture)
 
-    # Set cookie and redirect
+    # Set cookie and redirect.
     is_https = FRONTEND_URL.startswith("https")
-    response = RedirectResponse(url=f"{FRONTEND_URL}", status_code=302)
+    # Cross-origin production (frontend and backend on different hosts) requires
+    # SameSite=None + Secure, otherwise the browser drops the cookie on API calls.
+    _same_site = "none" if is_https else "lax"
+    # The cookie alone is unreliable across origins (third-party cookie blocking),
+    # so we also hand the JWT to the frontend via the URL fragment. The frontend
+    # stores it in localStorage and sends it as an Authorization: Bearer header.
+    callback_path = FRONTEND_URL.rstrip("/") + "/auth/callback#token=" + quote(token, safe="")
+    response = RedirectResponse(url=callback_path, status_code=302)
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         httponly=True,
         secure=is_https,
-        samesite="lax",
+        samesite=_same_site,
         max_age=JWT_EXPIRE_HOURS * 3600,
         path="/",
     )

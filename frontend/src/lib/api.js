@@ -2,7 +2,14 @@
  * API client for Clipo AI backend.
  */
 
-const API_BASE = 'http://localhost:8001';
+import { getSessionToken } from './auth';
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8001';
+
+function authHeaders() {
+  const token = getSessionToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 /**
  * Check if the backend is reachable. Returns true if healthy, false otherwise.
@@ -23,8 +30,12 @@ export async function checkBackendHealth() {
 async function apiFetch(url, options = {}) {
   const defaults = {
     credentials: 'include', // send auth cookies with cross-origin requests
+    headers: authHeaders(),
   };
   const merged = { ...defaults, ...options };
+  if (options.headers) {
+    merged.headers = { ...defaults.headers, ...options.headers };
+  }
   let res;
   try {
     res = await fetch(url, merged);
@@ -115,6 +126,8 @@ export function uploadVideo(file, onProgress) {
     xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
 
     xhr.open('POST', `${API_BASE}/api/upload`);
+    const token = getSessionToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.send(formData);
   });
 }

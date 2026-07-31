@@ -19,6 +19,8 @@ audio/
 transcripts/
 clips/
 temp/
+backend/jobs.json
+backend/users.json
 
 # IDE
 .vscode/
