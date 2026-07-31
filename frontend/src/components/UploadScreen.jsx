@@ -6,7 +6,11 @@ import StudioHeader from './StudioHeader';
 const ACCEPTED_TYPES = '.mp4,.mov,.mkv,.avi';
 const MAX_SIZE_BYTES = 5 * 1024 * 1024 * 1024;
 const PIPELINE = [
-  ['Upload', 'arrow'], ['Transcribe', 'wave'], ['AI analysis', 'spark'], ['Generate clips', 'clip'], ['Export', 'export'],
+  { label: 'Upload',     icon: 'arrow',  tone: 'cyan',   summary: 'Waiting for your source',      detail: 'MP4, MOV, MKV, or AVI up to 5 GB. YouTube links are downloaded automatically.', duration: '~30 sec' },
+  { label: 'Transcribe', icon: 'wave',   tone: 'violet', summary: 'Local, word-level timestamps', detail: 'Whisper runs on your machine. No audio is uploaded to the cloud.',          duration: '1–3 min' },
+  { label: 'AI analysis',icon: 'spark',  tone: 'pink',   summary: 'Find moments with momentum',   detail: 'Detects hooks, emotion shifts, and natural breakpoints worth sharing.',    duration: '20–40 sec' },
+  { label: 'Generate clips', icon: 'clip', tone: 'amber', summary: 'Cut and caption automatically',detail: 'Vertical reframing, captions, and per-clip metadata — ready to publish.', duration: '1–2 min' },
+  { label: 'Export',     icon: 'export', tone: 'green',  summary: 'Download in one click',        detail: 'Save individual clips or the whole batch. Pick format right before export.', duration: '~10 sec' },
 ];
 const BENEFITS = [
   ['01', 'Fast, local processing', 'Your footage stays on your machine.'],
@@ -181,9 +185,58 @@ export default function UploadScreen({ onProcessingStart, onNavigate, onVisitJob
             {supportsNotifications() && <label className="notification-toggle"><input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} /><span />Notify me when exports are ready</label>}
           </section>
           <aside className="pipeline-panel">
-            <div><div className="eyebrow">Your workflow</div><h2>From raw footage<br />to ready-to-post.</h2></div>
-            <ol className="pipeline-list">{PIPELINE.map(([label, icon], index) => <li key={label} className={index === 0 ? 'current' : ''}><span className="pipeline-icon"><Icon name={icon} /></span><div><strong>{label}</strong><small>{index === 0 ? 'Waiting for your source' : index === 1 ? 'Local, word-level timestamps' : index === 2 ? 'Find moments with momentum' : index === 3 ? 'Cut and caption automatically' : 'Download in one click'}</small></div><em>{index === 0 ? 'Ready' : `0${index + 1}`}</em></li>)}</ol>
-            <div className="pipeline-foot"><span className="live-dot" />Local GPU is ready</div>
+            <div className="pipeline-header">
+              <div className="pipeline-eyebrow">
+                <span className="eyebrow">Your workflow</span>
+                <span className="pipeline-counter">{PIPELINE.length} steps · ~4–8 min</span>
+              </div>
+              <h2>From raw footage<br />to ready-to-post.</h2>
+              <div className="pipeline-progress" aria-hidden="true">
+                {PIPELINE.map((step, i) => (
+                  <span
+                    key={step.label}
+                    className={`pipeline-progress-dot ${i === 0 ? 'is-active' : ''}`}
+                  />
+                ))}
+              </div>
+            </div>
+            <ol className="pipeline-flow">
+              {PIPELINE.map((step, index) => (
+                <li
+                  key={step.label}
+                  className={`pipeline-step ${index === 0 ? 'is-current' : ''} tone-${step.tone}`}
+                >
+                  <span className="pipeline-step-rail" aria-hidden="true">
+                    <span className="pipeline-step-icon">
+                      <Icon name={step.icon} />
+                    </span>
+                    {index < PIPELINE.length - 1 && <span className="pipeline-step-line" />}
+                  </span>
+                  <div className="pipeline-step-body">
+                    <div className="pipeline-step-head">
+                      <span className="pipeline-step-num">{String(index + 1).padStart(2, '0')}</span>
+                      <strong>{step.label}</strong>
+                      <span className="pipeline-step-duration">{step.duration}</span>
+                    </div>
+                    <p className="pipeline-step-summary">{step.summary}</p>
+                    <p className="pipeline-step-detail">{step.detail}</p>
+                  </div>
+                  {index === 0 && (
+                    <span className="pipeline-step-badge" aria-label="Ready">
+                      <span className="pipeline-step-dot" />
+                      Ready
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+            <div className="pipeline-foot">
+              <span className="live-dot" />
+              <div>
+                <strong>Local GPU is ready</strong>
+                <span>Everything runs on your machine</span>
+              </div>
+            </div>
           </aside>
         </div>
 

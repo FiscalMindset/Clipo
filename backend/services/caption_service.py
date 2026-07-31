@@ -148,30 +148,49 @@ def _build_ass(clip_start: float, clip_end: float, words: list[dict], style: str
     return "\n".join(lines)
 
 
+def _escape_ass_filter(path: str) -> str:
+    """Escape an absolute path for FFmpeg's libass subtitles filter.
+
+    libass treats colons as option separators and backslashes as escape
+    characters, so any literal `:` or `\\` in a Windows path must be escaped.
+    Single quotes are escaped on Windows only since POSIX shells handle them
+    differently and FFmpeg on macOS/Linux tolerates unescaped quotes.
+    """
+    import os
+    escaped = path.replace("\\", "\\\\").replace(":", "\\:")
+    if os.name == "nt":
+        escaped = escaped.replace("'", "\\'")
+    return escaped
+
+
 def _burn_subtitles_sync(clip_dir: Path, source_name: str, ass_name: str, output_name: str) -> None:
     """Burn an ASS subtitle file into a clip (sync, runs in executor).
 
-    FFmpeg's subtitles filter on this Windows build rejects absolute
-    drive-letter paths, so we run from inside the clip directory and pass
-    bare filenames. The audio is copied (already AAC) so only video re-encodes.
+    Uses absolute paths (with libass-appropriate escaping) instead of
+    relying on `cwd`, since relative paths break when the subtitles filter
+    parses the argument itself rather than reading from the cwd.
     """
+    source_path = str(clip_dir / source_name)
+    output_path = str(clip_dir / output_name)
+    ass_filter_arg = _escape_ass_filter(str(clip_dir / ass_name))
+
     try:
         result = subprocess.run(
             [
                 "ffmpeg",
-                "-i", source_name,
-                "-vf", f"subtitles={ass_name}",
+                "-y",
+                "-i", source_path,
+                "-vf", f"subtitles={ass_filter_arg}",
                 "-c:v", "libx264",
                 "-preset", "fast",
                 "-crf", "18",
                 "-c:a", "copy",
                 "-movflags", "+faststart",
-                "-y", output_name,
+                output_path,
             ],
             capture_output=True,
             text=True,
             timeout=300,
-            cwd=str(clip_dir),
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
@@ -180,7 +199,7 @@ def _burn_subtitles_sync(clip_dir: Path, source_name: str, ass_name: str, output
             "  Ubuntu: sudo apt install ffmpeg\n"
             "  Windows: winget install ffmpeg"
         ) from exc
-    if result.returncode != 0 or not (clip_dir / output_name).exists():
+    if result.returncode != 0 or not Path(output_path).exists():
         last_line = result.stderr.strip().splitlines()[-1] if result.stderr else "unknown error"
         raise RuntimeError(f"Caption burn failed: {last_line}")
 
