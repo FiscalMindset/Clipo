@@ -122,7 +122,8 @@ def _download_video_sync(url: str, output_path: str) -> None:
         "YouTube is blocking automated downloads. Fix this permanently by "
         "exporting a cookies.txt file from your logged-in browser "
         "(e.g. the 'Get cookies.txt LOCALLY' extension) and setting "
-        "YOUTUBE_COOKIES_FILE in backend/.env."
+        "YOUTUBE_COOKIES_FILE in backend/.env (or YOUTUBE_COOKIES_B64 "
+        "on Azure)."
     )
 
 
