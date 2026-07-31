@@ -87,6 +87,12 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi"}
 # --- YouTube Constraints ---
 MAX_YOUTUBE_DURATION = 3 * 60 * 60  # 3 hours in seconds
 
+# Optional cookies file (Netscape format) exported from your browser with a
+# "Get cookies.txt" extension. This is the most reliable way to bypass
+# YouTube's "Sign in to confirm you're not a bot" wall. Leave empty to fall
+# back to --cookies-from-browser and player-client tricks.
+YOUTUBE_COOKIES_FILE = os.getenv("YOUTUBE_COOKIES_FILE", "")
+
 
 # --- Auth / OAuth ---
 import secrets

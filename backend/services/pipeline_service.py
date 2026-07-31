@@ -182,6 +182,25 @@ async def run_pipeline(job_id: str, whisper_model: Any):
         duration_s = transcript.get("duration", 0)
         duration_m = duration_s / 60
 
+        # A video with (almost) no speech cannot be clipped meaningfully.
+        # Fail fast with a clear message instead of blaming the AI provider.
+        spoken_text = (transcript.get("text") or "").strip()
+        if len(spoken_text) < 20:
+            job["status"] = JobStatus.FAILED
+            job["error"] = (
+                "No speech detected in this video — it may be instrumental, "
+                "music-only, or silent. Clip detection needs spoken words. "
+                "Try a video with talking or narration."
+            )
+            job["current_step"] = "Failed"
+            for step in job["steps"]:
+                if step["status"] == "running":
+                    step["status"] = "failed"
+                    step["message"] = job["error"]
+                    break
+            _save_jobs()
+            return
+
         _update_step(
             job, "Transcribing Video", "completed",
             f"Transcribed {duration_m:.1f} min of audio into {num_segments} speech segments"

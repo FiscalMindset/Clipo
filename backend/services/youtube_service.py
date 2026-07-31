@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from fastapi import HTTPException
 
-from config import UPLOAD_DIR, MAX_YOUTUBE_DURATION
+from config import UPLOAD_DIR, MAX_YOUTUBE_DURATION, YOUTUBE_COOKIES_FILE
 
 
 YOUTUBE_URL_PATTERN = re.compile(
@@ -39,20 +39,30 @@ def _yt_dlp_strategies() -> list[list[str]]:
 
     YouTube increasingly throws a "Sign in to confirm you're not a bot" wall,
     which makes a plain download fail. We work around it by trying, in order:
-      1. Browser cookies from a logged-in session (best: full auth, zero config).
-      2. TV client — the most reliable automated bypass without cookies.
-      3. TV + web_safari + ios — broader client fallback.
-      4. Default client — fast path when there's no bot wall.
+      1. A cookies.txt file if configured (most reliable — full auth).
+      2. Browser cookies from a logged-in session (zero config).
+      3. TV client — the most reliable automated bypass without cookies.
+      4. TV + web_safari + ios — broader client fallback.
+      5. Default client — fast path when there's no bot wall.
     The first strategy that succeeds wins; if all fail we surface the last error.
     """
-    return [
+    strategies: list[list[str]] = []
+    if YOUTUBE_COOKIES_FILE:
+        strategies.append(["--cookies", YOUTUBE_COOKIES_FILE])
+    strategies.extend([
         ["--cookies-from-browser", "chrome"],
         ["--cookies-from-browser", "edge"],
         ["--cookies-from-browser", "brave"],
         ["--extractor-args", "youtube:player_client=tv"],
         ["--extractor-args", "youtube:player_client=tv,web_safari,ios"],
-        [],
-    ]
+    ])
+    if YOUTUBE_COOKIES_FILE:
+        strategies.append(
+            ["--extractor-args", "youtube:player_client=tv,web_safari,ios",
+             "--cookies", YOUTUBE_COOKIES_FILE]
+        )
+    strategies.append([])
+    return strategies
 
 
 def _yt_dlp_command(*args: str) -> list[str]:
@@ -107,7 +117,13 @@ def _download_video_sync(url: str, output_path: str) -> None:
             last_err = result.stderr.strip()
         except Exception as exc:  # noqa: BLE001 - fall through to next strategy
             last_err = str(exc)
-    raise RuntimeError(f"Failed to download video: {last_err}")
+    raise RuntimeError(
+        f"Failed to download video: {last_err}\n\n"
+        "YouTube is blocking automated downloads. Fix this permanently by "
+        "exporting a cookies.txt file from your logged-in browser "
+        "(e.g. the 'Get cookies.txt LOCALLY' extension) and setting "
+        "YOUTUBE_COOKIES_FILE in backend/.env."
+    )
 
 
 async def get_video_info(url: str) -> dict:

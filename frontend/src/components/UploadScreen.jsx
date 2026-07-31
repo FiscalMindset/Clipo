@@ -141,7 +141,7 @@ export default function UploadScreen({ onProcessingStart, onNavigate, onVisitJob
     }
   };
 
-  const aiProvider = backendConfig?.active_provider || 'none';
+  const aiProvider = backendConfig?.ai_provider || 'none';
   const nvidiaConfigured = backendConfig?.nvidia_configured || false;
 
   return <div className="dashboard-shell">
