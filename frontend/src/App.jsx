@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -26,6 +26,18 @@ function Studio() {
   const [jobDetails, setJobDetails] = useState(null);
   const [notifyWhenComplete, setNotifyWhenComplete] = useState(false);
   const [startupError, setStartupError] = useState(null);
+  const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
+
+  useEffect(() => {
+    const goOnline = () => setIsOffline(false);
+    const goOffline = () => setIsOffline(true);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
 
   const handleProcessingStart = useCallback(async (newJobId, options = {}) => {
     setJobId(newJobId);
@@ -104,6 +116,15 @@ function Studio() {
 
   return (
     <>
+      {isOffline && (
+        <div className="connection-notice" role="alert">
+          <div>
+            <strong>No internet connection</strong>
+            <span>Check your connection and try again. Your current project may not finish until you reconnect.</span>
+          </div>
+          <button type="button" onClick={handleReset}>Start a new project</button>
+        </div>
+      )}
       {startupError && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
@@ -135,6 +156,7 @@ function Studio() {
           onLeave={handleLeaveProcessing}
           onComplete={handleComplete}
           onError={handleError}
+          onConnectionChange={setIsOffline}
         />
       )}
       {screen === SCREEN.RESULTS && (

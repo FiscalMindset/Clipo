@@ -45,7 +45,7 @@ function AiUsageBadge({ aiUsage }) {
   );
 }
 
-export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete, onNotificationChange, onLeave, onComplete, onError, onNavigate }) {
+export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete, onNotificationChange, onLeave, onComplete, onError, onConnectionChange, onNavigate }) {
   const [steps, setSteps] = useState([]);
   const [error, setError] = useState(null);
   const [currentStep, setCurrentStep] = useState('Preparing your workspace');
@@ -68,6 +68,7 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
       try {
         const data = await getStatus(jobId);
         if (!active) return;
+        onConnectionChange?.(false);
         setSteps(data.steps || []);
         setCurrentStep(data.current_step || 'Working');
         if (data.ai_usage) setAiUsage(data.ai_usage);
@@ -85,12 +86,17 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
         }
         timeoutId = setTimeout(poll, POLL_INTERVAL);
       } catch {
-        if (active) timeoutId = setTimeout(poll, POLL_INTERVAL * 2);
+        if (active) {
+          // A status request can fail even before the browser emits `offline`
+          // (for example, when a connection drops mid-request).
+          onConnectionChange?.(true);
+          timeoutId = setTimeout(poll, POLL_INTERVAL * 2);
+        }
       }
     }
     poll();
     return () => { active = false; clearTimeout(timeoutId); };
-  }, [jobId, notifyWhenComplete, jobDetails, onComplete, onError]);
+  }, [jobId, notifyWhenComplete, jobDetails, onComplete, onError, onConnectionChange]);
 
   const handleNotifyToggle = async () => {
     if (notifyStatus === 'granted') {
