@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getCurrentUser } from '../lib/auth';
+import { getCurrentUser, setSessionToken } from '../lib/auth';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function AuthCallback() {
@@ -8,6 +8,11 @@ export default function AuthCallback() {
   const { setUser } = useAuth();
 
   useEffect(() => {
+    const hash = window.location.hash;
+    const match = hash.match(/token=([^&]+)/);
+    if (match) {
+      setSessionToken(match[1]);
+    }
     getCurrentUser().then((user) => {
       if (user) {
         setUser(user);

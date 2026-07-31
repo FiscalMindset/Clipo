@@ -280,8 +280,9 @@ async def detect_clips(
 
     if not clips:
         raise RuntimeError(
-            f"{provider.title()} returned no clips. "
-            "The video may not have enough interesting content."
+            f"{provider.title()} returned no clips. The video may not have "
+            "enough engaging speech. Try a longer video or a more talk-heavy "
+            "segment, then retry."
         )
 
     # Validate and sanitize timestamps

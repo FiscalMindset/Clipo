@@ -3,11 +3,11 @@ Auth Routes — Google OAuth 2.0 login/logout/session.
 """
 
 import json
-import os
-import httpx
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlencode
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode, quote
+
+import httpx
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -16,7 +16,7 @@ from jose import jwt, JWTError
 from config import (
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
-    FRONTEND_URL,
+    FRONTEND_URLS,
     BACKEND_URL,
     JWT_SECRET,
     JWT_ALGORITHM,
@@ -68,8 +68,16 @@ def _decode_jwt(token: str) -> dict | None:
 
 
 def get_current_user(request: Request) -> dict | None:
-    """Extract current user from session cookie. Returns None if unauthenticated."""
-    token = request.cookies.get(COOKIE_NAME)
+    """Extract current user from session cookie OR Authorization Bearer token.
+
+    Returns None if unauthenticated.
+    """
+    token = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.cookies.get(COOKIE_NAME)
     if not token:
         return None
     payload = _decode_jwt(token)
@@ -95,10 +103,19 @@ def require_user(request: Request) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/google")
-async def google_login():
-    """Redirect to Google's OAuth consent screen."""
+async def google_login(state: str = None):
+    """Redirect to Google's OAuth consent screen.
+
+    The `state` query param records which frontend origin started the login so
+    the callback can redirect the user back to that origin. Defaults to the
+    first configured frontend URL.
+    """
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=500, detail="Google OAuth not configured")
+
+    origin = FRONTEND_URLS[0]
+    if state and state in FRONTEND_URLS:
+        origin = state
 
     params = {
         "client_id": GOOGLE_CLIENT_ID,
@@ -107,17 +124,19 @@ async def google_login():
         "scope": "openid email profile",
         "access_type": "offline",
         "prompt": "select_account",
+        "state": origin,
     }
     return RedirectResponse(url=f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
 
 
 @router.get("/google/callback")
-async def google_callback(code: str = None, error: str = None):
+async def google_callback(code: str = None, error: str = None, state: str = None):
     """Exchange Google auth code for tokens, create session, redirect to app."""
+    origin = state if (state and state in FRONTEND_URLS) else FRONTEND_URLS[0]
     if error:
-        return RedirectResponse(url=f"{FRONTEND_URL}?error={error}")
+        return RedirectResponse(url=f"{origin}?error={error}")
     if not code:
-        return RedirectResponse(url=f"{FRONTEND_URL}?error=no_code")
+        return RedirectResponse(url=f"{origin}?error=no_code")
 
     # Exchange code for tokens
     async with httpx.AsyncClient() as client:
@@ -134,12 +153,12 @@ async def google_callback(code: str = None, error: str = None):
         )
 
     if token_resp.status_code != 200:
-        return RedirectResponse(url=f"{FRONTEND_URL}?error=token_exchange_failed")
+        return RedirectResponse(url=f"{origin}?error=token_exchange_failed")
 
     token_data = token_resp.json()
     access_token = token_data.get("access_token")
     if not access_token:
-        return RedirectResponse(url=f"{FRONTEND_URL}?error=no_access_token")
+        return RedirectResponse(url=f"{origin}?error=no_access_token")
 
     # Fetch user info from Google
     async with httpx.AsyncClient() as client:
@@ -150,7 +169,7 @@ async def google_callback(code: str = None, error: str = None):
         )
 
     if userinfo_resp.status_code != 200:
-        return RedirectResponse(url=f"{FRONTEND_URL}?error=userinfo_failed")
+        return RedirectResponse(url=f"{origin}?error=userinfo_failed")
 
     info = userinfo_resp.json()
     google_id = info["sub"]
@@ -158,14 +177,17 @@ async def google_callback(code: str = None, error: str = None):
     name = info.get("name", "")
     picture = info.get("picture", "")
 
-    # Upsert user
+    # Upsert user with persistence
     users = _load_users()
+    existing = users.get(google_id, {})
     user = {
         "id": google_id,
         "email": email,
         "name": name,
+        "display_name": existing.get("display_name", ""),
+        "bio": existing.get("bio", ""),
         "picture": picture,
-        "created_at": users.get(google_id, {}).get("created_at", datetime.now(timezone.utc)),
+        "created_at": existing.get("created_at", datetime.now(timezone.utc)),
         "last_login": datetime.now(timezone.utc),
     }
     users[google_id] = user
@@ -174,15 +196,22 @@ async def google_callback(code: str = None, error: str = None):
     # Create JWT session
     token = _create_jwt(google_id, email, name, picture)
 
-    # Set cookie and redirect
-    is_https = FRONTEND_URL.startswith("https")
-    response = RedirectResponse(url=f"{FRONTEND_URL}", status_code=302)
+    # Set cookie and redirect.
+    is_https = origin.startswith("https")
+    # Cross-origin production (frontend and backend on different hosts) requires
+    # SameSite=None + Secure, otherwise the browser drops the cookie on API calls.
+    _same_site = "none" if is_https else "lax"
+    # The cookie alone is unreliable across origins (third-party cookie blocking),
+    # so we also hand the JWT to the frontend via the URL fragment. The frontend
+    # stores it in localStorage and sends it as an Authorization: Bearer header.
+    callback_path = origin.rstrip("/") + "/auth/callback#token=" + quote(token, safe="")
+    response = RedirectResponse(url=callback_path, status_code=302)
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         httponly=True,
         secure=is_https,
-        samesite="lax",
+        samesite=_same_site,
         max_age=JWT_EXPIRE_HOURS * 3600,
         path="/",
     )
@@ -199,7 +228,63 @@ async def get_me(request: Request):
         "id": user["id"],
         "email": user["email"],
         "name": user["name"],
+        "display_name": user.get("display_name", ""),
+        "bio": user.get("bio", ""),
         "picture": user["picture"],
+        "created_at": user["created_at"],
+    }
+
+
+@router.put("/profile")
+async def update_profile(request: Request, body: dict):
+    """Update display name and bio for the authenticated user."""
+    user = require_user(request)
+    users = _load_users()
+    uid = user["id"]
+
+    if "display_name" in body:
+        users[uid]["display_name"] = body["display_name"][:60]
+    if "bio" in body:
+        users[uid]["bio"] = body["bio"][:300]
+
+    _save_users(users)
+    return {"message": "Profile updated"}
+
+
+@router.get("/stats")
+async def get_stats(request: Request):
+    """Return usage statistics for the authenticated user."""
+    user = require_user(request)
+
+    from services.pipeline_service import jobs, get_user_jobs
+    from config import CLIP_DIR
+    from models.schemas import JobStatus
+
+    uid = user["id"]
+    user_jobs = get_user_jobs(uid)
+
+    total_jobs = len(user_jobs)
+    total_clips = 0
+    completed_jobs = 0
+    total_storage = 0
+
+    for jid in user_jobs:
+        job = jobs[jid]
+        clips = job.get("clips", [])
+        total_clips += len(clips)
+        if job.get("status") == JobStatus.COMPLETED:
+            completed_jobs += 1
+            for c in clips:
+                fpath = CLIP_DIR / jid / c["filename"]
+                if fpath.exists():
+                    total_storage += fpath.stat().st_size
+
+    return {
+        "total_jobs": total_jobs,
+        "completed_jobs": completed_jobs,
+        "total_clips": total_clips,
+        "storage_bytes": total_storage,
+        "storage_mb": round(total_storage / (1024 * 1024), 1),
     }
 
 

@@ -14,6 +14,7 @@ Clipo is a local-first AI clip studio that ingests long-form video — uploaded 
 - [Demo Flow](#demo-flow)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
+- [Deployment Status](#deployment-status)
 - [Project Structure](#project-structure)
 - [How the Pipeline Works](#how-the-pipeline-works)
 - [Authentication Flow](#authentication-flow)
@@ -267,6 +268,177 @@ Open **http://localhost:5173** in your browser.
 
 ---
 
+## Deployment Status
+
+### Live URLs
+
+| Service | URL | Platform | Status |
+|---------|-----|----------|--------|
+| **Frontend** (primary) | https://clipo-6bfs.onrender.com | Render (static site) | ✅ Live |
+| **Backend API** | https://clipo-api.kindrock-424f2f5e.centralindia.azurecontainerapps.io | Azure Container Apps | ✅ Live |
+| Backend health check | https://clipo-api.kindrock-424f2f5e.centralindia.azurecontainerapps.io/api/health | — | ✅ `{"status":"ok"}` |
+| Frontend (secondary) | https://white-island-047e3ae00.7.azurestaticapps.net | Azure Static Web Apps | ✅ Live |
+
+The frontend is configured to call the backend at `https://clipo-api.kindrock-424f2f5e.centralindia.azurecontainerapps.io` via the `VITE_API_BASE` build-time env var.
+
+### Infrastructure
+
+```mermaid
+graph LR
+    subgraph Git ["GitHub — fork: FiscalMindset/Clipo"]
+        MAIN["main branch"]
+    end
+
+    subgraph FE ["Frontend — Render (static)"]
+        RENDER["clipo service<br/>clipo-6bfs.onrender.com"]
+        REWRITE["SPA rewrite /* → /index.html"]
+    end
+
+    subgraph BUILD ["Backend — build pipeline (manual, local)"]
+        DOCKER["docker buildx (linux/amd64)"]
+        GHCR["ghcr.io/fiscalmindset/clipo-api:latest"]
+    end
+
+    subgraph BE ["Backend — Azure Container Apps"]
+        ACA["clipo-api<br/>centralindia"]
+        SECRETS["Secrets: gemini-api-key,<br/>google-client-id/secret,<br/>jwt-secret, youtube-cookies"]
+    end
+
+    MAIN -->|"auto-deploy on git push fork main"| RENDER
+    MAIN -.->|"manual build + push"| DOCKER
+    DOCKER --> GHCR
+    GHCR -->|"az containerapp update (digest-pinned)"| ACA
+    RENDER -->|"VITE_API_BASE"| ACA
+    REWRITE --> RENDER
+    SECRETS --> ACA
+
+    style MAIN fill:#1e1b26,stroke:#6c63ff,color:#e2e0e7
+    style RENDER fill:#1a1d23,stroke:#38bdf8,color:#e2e0e7
+    style ACA fill:#1a1d23,stroke:#f59e0b,color:#e2e0e7
+    style GHCR fill:#1a1d23,stroke:#a855f7,color:#e2e0e7
+```
+
+### Repositories
+
+| Remote | URL | Purpose |
+|--------|-----|---------|
+| `origin` | https://github.com/SACHINN122/clipo.git | Upstream source of truth |
+| `fork` | https://github.com/FiscalMindset/Clipo.git | **Deployment target** — pushing `main` to this remote triggers a live deploy |
+
+**Deployment rule:** `git push fork main` auto-redeploys the Render frontend. The Azure backend is deployed manually (no CI workflow yet).
+
+### Frontend — Render
+
+The frontend is a **static site** hosted on Render (service `clipo`, ID `srv-d9m252jm8hqs739ndnb0`), connected to the `fork` GitHub repo.
+
+| Setting | Value |
+|---------|-------|
+| Runtime | Static site |
+| Branch | `main` (fork repo) |
+| Root directory | `frontend/` |
+| Build command | `npm install && npm run build` |
+| Publish directory | `dist` |
+| Env var | `VITE_API_BASE=https://clipo-api.kindrock-424f2f5e.centralindia.azurecontainerapps.io` |
+
+**SPA routing:** a catch-all rewrite rule (`/* → /index.html`) was created via the Render API (`routes` endpoint, rule `rdr-d9m29b8ae00c73b9v4lg`) so deep links like `/studio` and `/settings` work without a backend router. Assets are still served normally. This configuration is also captured in the committed [`render.yaml`](render.yaml) blueprint at the repo root.
+
+**To deploy a frontend change:**
+
+```bash
+git push fork main
+# Render detects the push, runs the build, and swaps the live site (≈1–2 min)
+```
+
+### Backend — Azure Container Apps
+
+The backend is a **FastAPI container** running on Azure Container Apps (resource group `algsoch-rg`, app `clipo-api`, region `centralindia`), image `ghcr.io/fiscalmindset/clipo-api`.
+
+**Image build (done locally, must target `linux/amd64`):**
+
+```bash
+docker buildx build --platform linux/amd64 -t ghcr.io/fiscalmindset/clipo-api:latest --push backend/
+```
+
+The `backend/Dockerfile` installs:
+- `ffmpeg` (audio extraction + clip merging — required, fatal if missing)
+- `curl` + `unzip` (to fetch the deno binary)
+- **deno** (used by yt-dlp to solve YouTube's JS challenges — signature + n-parameter; without it downloads fail with "Requested format is not available")
+- Python dependencies from `requirements.txt`
+
+**Deploy the new image (pin by digest to force a fresh revision + re-pull):**
+
+```bash
+# 1. Push the image, note the digest from the build output, e.g.
+#    ghcr.io/fiscalmindset/clipo-api:latest@sha256:907bb5cfea7734...
+
+# 2. Update the container app
+az containerapp update -n clipo-api -g algsoch-rg \
+  --image ghcr.io/fiscalmindset/clipo-api@sha256:907bb5cfea77344615adaecf9cabafd4bcae2b9dc53f9e4b5600ba1223c519a8 \
+  --set-env-vars "YOUTUBE_COOKIES_B64=secretref:youtube-cookies"
+
+# 3. Deactivate the previous revision so only the new one serves traffic
+az containerapp revision deactivate -n clipo-api -g algsoch-rg --revision clipo-api--0000002
+```
+
+> **Why pin by digest?** Re-running with the same `:latest` tag can reuse the cached image. Pinning the deploy to the new `@sha256:…` digest guarantees the container runtime re-pulls the exact image you built.
+
+**Container App secrets** (managed via `az containerapp secret set`, referenced with `secretref:`) and **env vars**:
+
+| Env var | Source | Value |
+|---------|--------|-------|
+| `GEMINI_API_KEY` | secret `gemini-api-key` | Gemini API key |
+| `GOOGLE_CLIENT_ID` | secret `google-client-id` | OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | secret `google-client-secret` | OAuth client secret |
+| `JWT_SECRET` | secret `jwt-secret` | JWT signing secret |
+| `YOUTUBE_COOKIES_B64` | secret `youtube-cookies` | Base64 YouTube cookies (Netscape format) |
+| `FRONTEND_URL` | value | `https://white-island-047e3ae00.7.azurestaticapps.net` |
+| `BACKEND_URL` | value | `https://clipo-api.kindrock-424f2f5e.centralindia.azurecontainerapps.io` |
+| `FRONTEND_URLS` | value | `https://white-island-047e3ae00.7.azurestaticapps.net,https://clipo-6bfs.onrender.com` |
+| `WHISPER_MODEL` | value | `base` |
+| `WHISPER_DEVICE` | value | `cpu` |
+| `WHISPER_COMPUTE_TYPE` | value | `int8` |
+
+**Verify a deploy:**
+
+```bash
+curl https://clipo-api.kindrock-424f2f5e.centralindia.azurecontainerapps.io/api/health
+# → {"status":"ok","ai_provider":"gemini","ai_configured":true,...}
+
+az containerapp revision list -n clipo-api -g algsoch-rg \
+  --query "[].{name:name,healthy:healthState,active:active,image:image}" -o table
+```
+
+### YouTube anti-bot setup (yt-dlp)
+
+YouTube's "Sign in to confirm you're not a bot" wall is bypassed in production with a **cookies.txt file** + **JS-challenge solving**:
+
+1. **Export cookies locally** (close Chrome first; this both exports and validates):
+   ```bash
+   backend/.venv/bin/yt-dlp --cookies-from-browser chrome \
+     --cookies ~/youtube_cookies.txt --skip-download \
+     "https://www.youtube.com/watch?v=JrNMyzsYr4M"
+   ```
+2. **Refresh the secret** (cookies expire — on re-export, rerun this and redeploy):
+   ```bash
+   az containerapp secret set -n clipo-api -g algsoch-rg \
+     --secrets "youtube-cookies=$(base64 < ~/youtube_cookies.txt)"
+   az containerapp update -n clipo-api -g algsoch-rg \
+     --image ghcr.io/fiscalmindset/clipo-api@sha256:<current-digest> \
+     --set-env-vars "YOUTUBE_COOKIES_B64=secretref:youtube-cookies"
+   ```
+
+`backend/config.py` decodes `YOUTUBE_COOKIES_B64` into a temp file at startup and every yt-dlp strategy runs with `--remote-components ejs:github` so the EJS solver script is downloaded and cached. Keep `~/youtube_cookies.txt` secure — it contains your logged-in YouTube session.
+
+### Redeploy checklist
+
+1. `git push fork main` → Render picks up frontend changes automatically.
+2. For backend changes: `docker buildx build --platform linux/amd64 --push backend/`.
+3. Pin the deploy to the new digest and update env/secret changes in one `az containerapp update`.
+4. Deactivate the previous revision once the new one reports `Healthy`.
+5. Smoke-test: open the frontend, run a YouTube job, and check `GET /api/status/{job_id}` reaches `completed`.
+
+---
+
 ## Project Structure
 
 ```
@@ -460,6 +632,9 @@ All settings are read from `backend/.env`. Defaults work out of the box for loca
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MAX_YOUTUBE_DURATION` | `10800` (3h) | Max video length in seconds |
+| `YOUTUBE_COOKIES_FILE` | `""` | Path to a Netscape-format cookies.txt (local dev) |
+| `YOUTUBE_COOKIES_B64` | `""` | Base64 cookies.txt content (used on ephemeral filesystems, e.g. Azure) |
+| `YOUTUBE_COOKIES` | `""` | Raw cookies.txt content (alternative to `_B64`) |
 
 ### Performance Tips
 

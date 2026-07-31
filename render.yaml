@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: clipo
+    runtime: static
+    repo: https://github.com/FiscalMindset/Clipo
+    branch: main
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE
+        value: https://clipo-api.kindrock-424f2f5e.centralindia.azurecontainerapps.io
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
