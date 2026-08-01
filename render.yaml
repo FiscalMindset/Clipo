@@ -6,6 +6,7 @@ services:
     repo: https://github.com/FiscalMindset/Clipo
     branch: main
     rootDir: backend
+    plan: free
     envVars:
       # Secrets you will need to fill out in the Render Dashboard:
       - key: GEMINI_API_KEY
