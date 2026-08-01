@@ -1,4 +1,21 @@
 services:
+  # 1. The Python Backend (FastAPI + Docker)
+  - type: web
+    name: clipo-api
+    env: docker
+    repo: https://github.com/FiscalMindset/Clipo
+    branch: main
+    rootDir: backend
+    envVars:
+      # Secrets you will need to fill out in the Render Dashboard:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: WHISPER_DEVICE
+        value: cpu
+      - key: WHISPER_COMPUTE_TYPE
+        value: int8
+
+  # 2. The React Frontend
   - type: web
     name: clipo
     runtime: static
@@ -9,7 +26,11 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_API_BASE
-        value: https://clipo-api.kindrock-424f2f5e.centralindia.azurecontainerapps.io
+        # This automatically grabs the public URL of the backend above!
+        fromService:
+          type: web
+          name: clipo-api
+          envVarKey: RENDER_EXTERNAL_URL
     routes:
       - type: rewrite
         source: /*
