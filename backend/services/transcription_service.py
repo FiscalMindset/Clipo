@@ -72,6 +72,11 @@ def _audio_duration_seconds(audio_path: Path) -> float:
 
 def load_local_whisper_model() -> Any | None:
     """Load faster-whisper if it is usable on this machine."""
+    import os
+    if os.environ.get("RENDER"):
+        print("Running on Render free tier (512MB RAM) - Disabling local Whisper model to prevent Out Of Memory crash!")
+        return None
+
     try:
         from faster_whisper import WhisperModel
     except Exception as exc:
