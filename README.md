@@ -760,7 +760,7 @@ Made with care by:
 
 **Vicky Kumar** — [@FiscalMindset](https://github.com/FiscalMindset) · Co-developer · 40 commits
 
-*Frontend UI/UX, caption studio, clip metrics, notifications & completion alerts, phone-first experience.*
+*Full frontend UI/UX overhaul (auth, navigation, library), caption studio with styled presets, AI clip metrics, notifications & completion alerts, phone-first design (iOS safe areas, bottom sheets, spring transitions, touch optimizations), PWA install, job persistence, resilient YouTube downloads (cookies + JS-challenge solving), auth & OAuth fixes, ffmpeg timeout scaling.*
 
 <br clear="left" />
 
