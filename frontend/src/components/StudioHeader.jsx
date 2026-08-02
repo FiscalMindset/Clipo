@@ -4,8 +4,8 @@ import { logout } from '../lib/auth';
 import ClipoMark from './ClipoMark';
 
 const NAV_ITEMS = [
-  { id: 'create',   label: 'Create',   icon: 'spark' },
-  { id: 'library',  label: 'Library',  icon: 'library' },
+  { id: 'create', label: 'Create', icon: 'spark' },
+  { id: 'library', label: 'Library', icon: 'library' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
 ];
 
@@ -63,9 +63,7 @@ export default function StudioHeader({ activeTab = 'create', onNavigate, rightSl
 
       <div className="header-actions">
         <span className="local-badge"><i />Local-first</span>
-        <button className="results-quiet" onClick={() => window.dispatchEvent(new CustomEvent('open-report'))}>
-          Report
-        </button>
+        <a className="results-quiet" href="/report">Report</a>
         {user && (
           <div
             className="user-menu"
@@ -145,9 +143,7 @@ export default function StudioHeader({ activeTab = 'create', onNavigate, rightSl
           ))}
         </nav>
         <div className="mobile-header-actions">
-          <button className="results-quiet" onClick={() => { window.dispatchEvent(new CustomEvent('open-report')); setMenuOpen(false); }}>
-            Report
-          </button>
+          <a className="results-quiet" href="/report" onClick={() => setMenuOpen(false)}>Report</a>
         </div>
       </div>
     </header>

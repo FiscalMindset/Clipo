@@ -759,6 +759,16 @@
   border-radius: 8px
 }
 
+/* Report page */
+.report-page { padding: 24px }
+.report-frame { max-width: 900px; margin: 40px auto; background: #0b0a0d; padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.04) }
+.report-header { display:flex; align-items:center; gap:12px; margin-bottom:12px }
+.report-header h1 { margin:0; font-size:18px }
+.report-body p { color:#bdb6c6 }
+.report-body textarea { width:100%; min-height:220px; margin-top:12px; padding:10px; border-radius:8px; background:#121116; color:#eee; border:1px solid rgba(255,255,255,0.03) }
+.report-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px }
+.report-sent { text-align:center }
+
 .report-actions {
   display: flex;
   justify-content: flex-end;
@@ -2513,11 +2523,13 @@ body {
   gap: 8px;
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px solid rgba(255,255,255,0.03);
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
 }
 
 @media (max-width: 850px) {
-  .header-actions { display: none }
+  .header-actions {
+    display: none
+  }
 }
 
 .app-mobile-link {

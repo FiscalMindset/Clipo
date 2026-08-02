@@ -161,11 +161,10 @@ export default function ResultsScreen({ jobId, onReset }) {
       .catch((err) => { setError(err.message); setLoading(false); });
   }, [jobId]);
 
-  // Listen for global report-open events (triggered from header)
+  // Keep backward-compatible: open modal when coming back from report route
   useEffect(() => {
-    const onOpen = () => setShowReportModal(true);
-    window.addEventListener('open-report', onOpen);
-    return () => window.removeEventListener('open-report', onOpen);
+    const params = new URLSearchParams(window.location.search);
+    if (window.location.pathname === '/report') setShowReportModal(true);
   }, []);
 
   // When clips finish loading for the first time and there are clips,

@@ -6,6 +6,7 @@ import { startProcessing, getStatus } from './lib/api';
 import UploadScreen from './components/UploadScreen';
 import ProcessingScreen from './components/ProcessingScreen';
 import ResultsScreen from './components/ResultsScreen';
+import ReportScreen from './components/ReportScreen';
 import ProfileScreen from './components/ProfileScreen';
 import LibraryScreen from './components/LibraryScreen';
 import SettingsScreen from './components/SettingsScreen';
@@ -180,6 +181,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          <Route path="/report" element={<ProtectedRoute><ReportScreen /></ProtectedRoute>} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route
             path="*"
