@@ -744,25 +744,16 @@ Jobs are held in-memory. Restarting the backend clears all job state. For persis
 
 Made with care by:
 
-<a href="https://github.com/SACHINN122">
-  <img src="https://github.com/SACHINN122.png" width="64" height="64" alt="SACHIN PRAJAPATI" align="left" />
-</a>
+```mermaid
+pie showData title Commit share (92 total)
+    "SACHIN PRAJAPATI" : 52
+    "Vicky Kumar" : 40
+```
 
-**SACHIN PRAJAPATI** — [@SACHINN122](https://github.com/SACHINN122) · Creator · 52 commits
-
-*Pipeline design, backend architecture, deployment (Render + Azure), and core AI workflows.*
-
-<br clear="left" />
-
-<a href="https://github.com/FiscalMindset">
-  <img src="https://github.com/FiscalMindset.png" width="64" height="64" alt="Vicky Kumar" align="left" />
-</a>
-
-**Vicky Kumar** — [@FiscalMindset](https://github.com/FiscalMindset) · Co-developer · 40 commits
-
-*Full frontend UI/UX overhaul (auth, navigation, library), caption studio with styled presets, AI clip metrics, notifications & completion alerts, phone-first design (iOS safe areas, bottom sheets, spring transitions, touch optimizations), PWA install, job persistence, resilient YouTube downloads (cookies + JS-challenge solving), auth & OAuth fixes, ffmpeg timeout scaling.*
-
-<br clear="left" />
+| Contributor | Role | Commits | Focus areas |
+| :--- | :--- | :---: | :--- |
+| [![SACHIN PRAJAPATI](https://github.com/SACHINN122.png?size=28)](https://github.com/SACHINN122) **SACHIN PRAJAPATI** — [@SACHINN122](https://github.com/SACHINN122) | Creator | 52 | Pipeline design · backend architecture · deployment (Render + Azure) · core AI workflows |
+| [![Vicky Kumar](https://github.com/FiscalMindset.png?size=28)](https://github.com/FiscalMindset) **Vicky Kumar** — [@FiscalMindset](https://github.com/FiscalMindset) | Co-developer | 40 | Frontend UI/UX overhaul · caption studio · AI clip metrics · notifications & completion alerts · phone-first design · PWA install · job persistence · resilient YouTube downloads · auth & OAuth fixes · ffmpeg timeout scaling |
 
 ---
 
