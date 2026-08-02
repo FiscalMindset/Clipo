@@ -750,15 +750,15 @@ Jobs are held in-memory. Restarting the backend clears all job state. For persis
 Made with care by:
 
 ```mermaid
-pie showData title Commit share (92 total)
+pie showData title Commit share (104 total)
+    "Vicky Kumar" : 52
     "SACHIN PRAJAPATI" : 52
-    "Vicky Kumar" : 40
 ```
 
 | Contributor | Role |
 | :--- | :--- |
-| [![SACHIN PRAJAPATI](https://github.com/SACHINN122.png?size=28)](https://github.com/SACHINN122) **SACHIN PRAJAPATI** — [@SACHINN122](https://github.com/SACHINN122) | Creator |
 | [![Vicky Kumar](https://github.com/FiscalMindset.png?size=28)](https://github.com/FiscalMindset) **Vicky Kumar** — [@FiscalMindset](https://github.com/FiscalMindset) | Co-developer |
+| [![SACHIN PRAJAPATI](https://github.com/SACHINN122.png?size=28)](https://github.com/SACHINN122) **SACHIN PRAJAPATI** — [@SACHINN122](https://github.com/SACHINN122) | Creator |
 <!-- CONTRIBUTORS:END -->
 
 ---
