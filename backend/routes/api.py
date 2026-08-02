@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 import subprocess
 
-from config import CLIP_DIR
+from config import CLIP_DIR, TEMP_DIR
 
 # API router
 from fastapi import APIRouter
@@ -38,13 +38,63 @@ from services.caption_service import generate_captioned_clip, list_styles
 from routes.auth import get_current_user, require_user
 
 
+_REPORT_TYPE_LABELS = {
+    "bug": ["bug"],
+    "feature": ["enhancement"],
+    "feedback": ["question"],
+}
+
+
+def _create_github_issue(report: dict) -> str | None:
+    """Create a GitHub issue for a report. Returns the issue URL, or None."""
+    import httpx
+    from config import GITHUB_TOKEN, GITHUB_REPO
+
+    if not GITHUB_TOKEN:
+        return None
+
+    title = (report.get("title") or "").strip() or (report.get("message") or "")[:60]
+    labels = list(_REPORT_TYPE_LABELS.get(report.get("type", "bug"), ["bug"]))
+
+    sections = []
+    if report.get("message"):
+        sections.append(report["message"].strip())
+    if report.get("steps"):
+        sections.append(f"**Steps to reproduce:**\n\n{report['steps'].strip()}")
+    if report.get("expected"):
+        sections.append(f"**Expected behavior:**\n\n{report['expected'].strip()}")
+    if report.get("actual"):
+        sections.append(f"**Actual behavior:**\n\n{report['actual'].strip()}")
+    sections.append(
+        "---\n"
+        f"_Reported via the in-app report form._\n\n"
+        f"- **Type:** `{report.get('type', 'bug')}`\n"
+        f"- **User:** `{report.get('user_id') or 'anonymous'}`\n"
+        f"- **Job:** `{report.get('job_id') or '-'}`\n"
+        f"- **Clip:** `{report.get('clip_id') or '-'}`"
+    )
+
+    resp = httpx.post(
+        f"https://api.github.com/repos/{GITHUB_REPO}/issues",
+        headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        json={"title": title, "body": "\n\n".join(sections), "labels": labels},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    return resp.json().get("html_url")
+
+
 @router.post('/report')
 async def report_issue(request: Request, job_id: str | None = None, clip_id: int | None = None, message: str | None = None):
-    """Accept user-submitted reports/feedback and store them locally.
+    """Accept user-submitted reports/feedback.
 
-    This is intentionally simple: reports are written to the backend `TEMP_DIR`
-    as JSON files for later inspection. In production you'd forward these to
-    logging/issue trackers or a support inbox.
+    Reports are saved locally, optionally emailed to support, and — when
+    ``GITHUB_TOKEN`` is configured — created directly as a GitHub issue so
+    maintainers see them without a separate sync step.
     """
     user = get_current_user(request)
     user_id = user["id"] if user else None
@@ -54,12 +104,24 @@ async def report_issue(request: Request, job_id: str | None = None, clip_id: int
     except Exception:
         payload = {"message": message}
 
+    report_type = str(payload.get("type") or "bug").strip().lower()
+    if report_type not in _REPORT_TYPE_LABELS:
+        report_type = "bug"
+
     report = {
-        "job_id": job_id or payload.get("job_id"),
-        "clip_id": clip_id or payload.get("clip_id"),
-        "message": payload.get("message") if payload.get("message") is not None else message,
+        "type": report_type,
+        "title": (payload.get("title") or "").strip(),
+        "message": str(payload.get("message") if payload.get("message") is not None else message or "").strip(),
+        "steps": str(payload.get("steps") or "").strip(),
+        "expected": str(payload.get("expected") or "").strip(),
+        "actual": str(payload.get("actual") or "").strip(),
+        "job_id": payload.get("job_id") or job_id,
+        "clip_id": payload.get("clip_id") or clip_id,
         "user_id": user_id,
     }
+
+    if not report["title"] and not report["message"]:
+        raise HTTPException(status_code=400, detail="Report needs a title or a message")
 
     try:
         import json, time
@@ -67,6 +129,13 @@ async def report_issue(request: Request, job_id: str | None = None, clip_id: int
         fname.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     except Exception:
         raise HTTPException(status_code=500, detail="Could not save report")
+
+    # Create a GitHub issue when the integration is configured
+    issue_url = None
+    try:
+        issue_url = _create_github_issue(report)
+    except Exception:
+        issue_url = None
 
     # Attempt to send an email to support if SMTP is configured
     try:
@@ -98,7 +167,7 @@ async def report_issue(request: Request, job_id: str | None = None, clip_id: int
     except Exception:
         pass
 
-    return {"status": "ok"}
+    return {"status": "ok", "issue_url": issue_url}
 
 
 

@@ -160,3 +160,7 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "")
+
+# --- GitHub issue integration (in-app reports become issues) ---
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "SACHINN122/Clipo")

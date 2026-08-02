@@ -765,9 +765,38 @@
 .report-header { display:flex; align-items:center; gap:12px; margin-bottom:12px }
 .report-header h1 { margin:0; font-size:18px }
 .report-body p { color:#bdb6c6 }
-.report-body textarea { width:100%; min-height:220px; margin-top:12px; padding:10px; border-radius:8px; background:#121116; color:#eee; border:1px solid rgba(255,255,255,0.03) }
-.report-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px }
+.report-types { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:12px }
+.report-type {
+  display:flex; flex-direction:column; gap:4px; text-align:left;
+  padding:10px 12px; border-radius:8px; cursor:pointer;
+  background:#121116; color:#eee;
+  border:1px solid rgba(255,255,255,0.04);
+}
+.report-type:hover { border-color:rgba(124,58,237,0.5) }
+.report-type.active { border-color:#7c3aed; background:rgba(124,58,237,0.12) }
+.report-type-label { font-size:13px; font-weight:600 }
+.report-type-hint { font-size:11px; color:#8d8696 }
+.report-field { display:block; margin-top:14px }
+.report-field > span { display:block; font-size:12px; font-weight:600; color:#cfc8d8; margin-bottom:6px }
+.report-field input,
+.report-field textarea {
+  width:100%; padding:10px; border-radius:8px; box-sizing:border-box;
+  background:#121116; color:#eee; border:1px solid rgba(255,255,255,0.03);
+  font:inherit;
+}
+.report-field input:focus, .report-field textarea:focus { outline:none; border-color:#7c3aed }
+.report-field textarea { min-height:120px; resize:vertical }
+.report-field textarea.report-small { min-height:64px }
+.report-field .report-opt { font-weight:400; color:#8d8696; font-style:normal }
+.report-row { display:grid; grid-template-columns:1fr 1fr; gap:12px }
+.report-error { margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(239,68,68,0.1); color:#f87171; font-size:13px }
+.report-issue-link { margin-top:8px }
+.report-issue-link a { color:#a78bfa }
 .report-sent { text-align:center }
+@media (max-width:640px) {
+  .report-types { grid-template-columns:1fr }
+  .report-row { grid-template-columns:1fr }
+}
 
 .report-actions {
   display: flex;

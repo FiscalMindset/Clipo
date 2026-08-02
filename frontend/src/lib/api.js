@@ -219,3 +219,15 @@ export async function updateProfile(data) {
 export async function getUserStats() {
   return apiFetch(`${API_BASE}/auth/stats`);
 }
+
+/**
+ * Submit a report/feedback. Backend saves it locally and, when configured,
+ * creates a GitHub issue and returns its URL.
+ */
+export async function submitReport(payload) {
+  return apiFetch(`${API_BASE}/api/report`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
