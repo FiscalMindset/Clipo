@@ -56,6 +56,7 @@ function ClipCard({ clip, jobId, onPlay, onRename, onDelete, onStudio }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isCaptured = Boolean(clip.video_url && clip.video_url.includes('captioned_clip_'));
 
+
   return (
     <motion.article
       className="result-clip-card"
@@ -103,10 +104,12 @@ function ClipCard({ clip, jobId, onPlay, onRename, onDelete, onStudio }) {
             <Icon type="caption" />
             <span>Studio</span>
           </button>
-          <a href={getDownloadUrl(jobId, clip.filename)} download>
-            <Icon type="download" />
-            <span>Download</span>
-          </a>
+          <div className="result-card-actions-download">
+            <a href={getDownloadUrl(jobId, clip.filename)} download>
+              <Icon type="download" />
+              <span>Download</span>
+            </a>
+          </div>
         </div>
         <AnimatePresence>
           {menuOpen && (
@@ -141,6 +144,10 @@ export default function ResultsScreen({ jobId, onReset }) {
   const [clips, setClips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportMessage, setReportMessage] = useState('');
+  const [showFeedbackToast, setShowFeedbackToast] = useState(false);
+  const [feedbackPrompted, setFeedbackPrompted] = useState(false);
   const [playingClip, setPlayingClip] = useState(null);
   const [studioClip, setStudioClip] = useState(null);
   const [query, setQuery] = useState('');
@@ -153,6 +160,15 @@ export default function ResultsScreen({ jobId, onReset }) {
       .then((data) => { setClips(data || []); setLoading(false); })
       .catch((err) => { setError(err.message); setLoading(false); });
   }, [jobId]);
+
+  // When clips finish loading for the first time and there are clips,
+  // show a small feedback toast prompting the user for feedback.
+  useEffect(() => {
+    if (!loading && clips.length > 0 && !feedbackPrompted) {
+      setShowFeedbackToast(true);
+      setFeedbackPrompted(true);
+    }
+  }, [loading, clips, feedbackPrompted]);
 
   const totalRuntime = useMemo(
     () => clips.reduce((sum, clip) => sum + (clip.duration || 0), 0),
@@ -199,6 +215,21 @@ export default function ResultsScreen({ jobId, onReset }) {
     document.body.appendChild(link);
     link.click();
     link.remove();
+  };
+
+  const submitReport = async () => {
+    try {
+      await fetch(`/api/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId, message: reportMessage }),
+      });
+    } catch (err) {
+      // ignore errors for now
+    }
+    setReportMessage('');
+    setShowReportModal(false);
+    setShowFeedbackToast(false);
   };
 
   if (loading) {
@@ -264,6 +295,15 @@ export default function ResultsScreen({ jobId, onReset }) {
             >
               <Icon type="plus" />
               <span>New job</span>
+            </motion.button>
+            <motion.button
+              className="results-quiet"
+              onClick={() => setShowReportModal(true)}
+              whileHover={{ y: -1 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              <Icon type="close" />
+              <span>Report issue</span>
             </motion.button>
           </div>
         </motion.header>
@@ -397,6 +437,38 @@ export default function ResultsScreen({ jobId, onReset }) {
           </motion.section>
         )}
       </div>
+
+      {/* Feedback toast */}
+      <AnimatePresence>
+        {showFeedbackToast && (
+          <motion.div className="feedback-toast" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}>
+            <div>
+              <strong>How did this job go?</strong>
+              <p>Quick feedback helps us improve results.</p>
+            </div>
+            <div className="feedback-actions">
+              <button className="results-primary" onClick={() => setShowFeedbackToast(false)}>Looks good</button>
+              <button className="results-quiet" onClick={() => { setShowReportModal(true); setShowFeedbackToast(false); }}>Report issue</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Report modal */}
+      <AnimatePresence>
+        {showReportModal && (
+          <motion.div className="report-modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className="report-modal" initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.98, opacity: 0 }}>
+              <h3>Report an issue</h3>
+              <textarea value={reportMessage} onChange={(e) => setReportMessage(e.target.value)} placeholder="Describe the problem or suggestion" />
+              <div className="report-actions">
+                <button className="results-quiet" onClick={() => setShowReportModal(false)}>Cancel</button>
+                <button className="results-primary" onClick={submitReport}>Send report</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {playingClip && (

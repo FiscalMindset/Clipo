@@ -24,6 +24,9 @@ backend/users.json
 users.json
 .jwt_secret
 
+# Local command-line tools
+.tools/
+
 # IDE
 .vscode/
 .idea/

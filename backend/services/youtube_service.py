@@ -96,7 +96,7 @@ def _get_video_info_sync(url: str) -> dict:
                 _yt_dlp_command(*extra, "--dump-json", "--no-download", "--no-warnings", url),
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=180,
             )
             if result.returncode == 0 and result.stdout.strip():
                 return json.loads(result.stdout)

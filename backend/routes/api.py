@@ -9,8 +9,13 @@ from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
+import subprocess
 
 from config import CLIP_DIR
+
+# API router
+from fastapi import APIRouter
+router = APIRouter(prefix="/api")
 from models.schemas import (
     UploadResponse,
     YouTubeRequest,
@@ -33,7 +38,69 @@ from services.caption_service import generate_captioned_clip, list_styles
 from routes.auth import get_current_user, require_user
 
 
-router = APIRouter(prefix="/api")
+@router.post('/report')
+async def report_issue(request: Request, job_id: str | None = None, clip_id: int | None = None, message: str | None = None):
+    """Accept user-submitted reports/feedback and store them locally.
+
+    This is intentionally simple: reports are written to the backend `TEMP_DIR`
+    as JSON files for later inspection. In production you'd forward these to
+    logging/issue trackers or a support inbox.
+    """
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {"message": message}
+
+    report = {
+        "job_id": job_id or payload.get("job_id"),
+        "clip_id": clip_id or payload.get("clip_id"),
+        "message": payload.get("message") if payload.get("message") is not None else message,
+        "user_id": user_id,
+    }
+
+    try:
+        import json, time
+        fname = TEMP_DIR / f"report-{int(time.time())}.json"
+        fname.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+    except Exception:
+        raise HTTPException(status_code=500, detail="Could not save report")
+
+    # Attempt to send an email to support if SMTP is configured
+    try:
+        from config import SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_USE_TLS, SUPPORT_EMAIL
+        if SMTP_HOST and SUPPORT_EMAIL:
+            try:
+                import json as _json
+                from email.message import EmailMessage
+                import smtplib
+
+                msg = EmailMessage()
+                subj = f"Clipo report" + (f" (job {report['job_id']})" if report.get('job_id') else '')
+                msg['Subject'] = subj
+                msg['From'] = SMTP_USER or f"noreply@{SMTP_HOST.split(':')[0]}"
+                msg['To'] = SUPPORT_EMAIL
+                body = _json.dumps(report, ensure_ascii=False, indent=2)
+                msg.set_content(body)
+
+                smtp = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+                if SMTP_USE_TLS:
+                    smtp.starttls()
+                if SMTP_USER and SMTP_PASS:
+                    smtp.login(SMTP_USER, SMTP_PASS)
+                smtp.send_message(msg)
+                smtp.quit()
+            except Exception:
+                # don't fail the request if email can't be sent; we still saved the report
+                pass
+    except Exception:
+        pass
+
+    return {"status": "ok"}
+
+
 
 
 @router.get("/health")
@@ -264,8 +331,14 @@ async def create_captions(request: Request, job_id: str, clip_id: int, style: st
 
 
 @router.get("/download/{job_id}/{filename}")
-async def download_clip(job_id: str, filename: str):
-    """Download a specific clip file."""
+async def download_clip(request: Request, job_id: str, filename: str, aspect_ratio: str | None = None):
+    """Download a specific clip file.
+
+    Optional query param `aspect_ratio` can be `16:9` or `9:16`. When provided
+    the server will transcode the stored clip to the requested aspect ratio and
+    return a temporary MP4 file. The temporary file is removed after the
+    response is finished.
+    """
     clip_path = CLIP_DIR / job_id / filename
 
     if not clip_path.exists():
@@ -277,10 +350,127 @@ async def download_clip(job_id: str, filename: str):
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # If no aspect requested, return original file
+    if not aspect_ratio:
+        return FileResponse(path=str(clip_path), filename=filename, media_type="video/mp4")
+
+    # Validate aspect
+    if aspect_ratio not in ("16:9", "9:16"):
+        raise HTTPException(status_code=422, detail="Unsupported aspect_ratio; use 16:9 or 9:16")
+
+    # Map to target resolution (use modest defaults to keep transcodes fast)
+    if aspect_ratio == "16:9":
+        target_w, target_h = 1280, 720
+    else:
+        target_w, target_h = 720, 1280
+
+    # Probe source dimensions and duration
+    try:
+        probe = subprocess.run([
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=p=0:s=x",
+            str(clip_path)
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        w_h = probe.stdout.decode().strip().split('x')
+        src_w, src_h = int(w_h[0]), int(w_h[1])
+    except Exception:
+        # If probing fails, fall back to original file
+        return FileResponse(path=str(clip_path), filename=filename, media_type="video/mp4")
+
+    # Compute crop dimensions to fill target aspect (crop then scale)
+    src_ratio = src_w / src_h
+    target_ratio = target_w / target_h
+    if src_ratio > target_ratio:
+        # source is wider -> crop width
+        crop_h = src_h
+        crop_w = int(round(src_h * target_ratio))
+    else:
+        # source is taller or equal -> crop height
+        crop_w = src_w
+        crop_h = int(round(src_w / target_ratio))
+
+    # Default crop center
+    crop_x = max(0, (src_w - crop_w) // 2)
+    crop_y = max(0, (src_h - crop_h) // 2)
+
+    # Attempt simple smart-crop: use OpenCV face detection on a few sampled frames
+    try:
+        import cv2
+        # extract duration for sampling
+        dur_proc = subprocess.run([
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(clip_path)
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        duration = float(dur_proc.stdout.decode().strip() or 0)
+        samples = 6
+        centers = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            if not Path(cascade_path).exists():
+                raise RuntimeError('haar cascade not found')
+            face_cascade = cv2.CascadeClassifier(cascade_path)
+            for i in range(samples):
+                ts = (i + 1) * duration / (samples + 1)
+                out_img = Path(tmpdir) / f"frame_{i}.jpg"
+                ff = subprocess.run([
+                    "ffmpeg", "-y", "-ss", str(ts), "-i", str(clip_path), "-frames:v", "1", "-q:v", "2", str(out_img)
+                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if not out_img.exists():
+                    continue
+                img = cv2.imread(str(out_img))
+                if img is None:
+                    continue
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30))
+                if len(faces) == 0:
+                    continue
+                # choose largest face
+                faces = sorted(faces, key=lambda r: r[2] * r[3], reverse=True)
+                (fx, fy, fw, fh) = faces[0]
+                # map face center from thumbnail back to source coords
+                ih, iw = img.shape[0], img.shape[1]
+                cx = (fx + fw / 2) * (src_w / iw)
+                cy = (fy + fh / 2) * (src_h / ih)
+                centers.append((cx, cy))
+            if centers:
+                avg_x = sum(c[0] for c in centers) / len(centers)
+                avg_y = sum(c[1] for c in centers) / len(centers)
+                # move crop so the face center is centered in crop when possible
+                crop_x = int(min(max(0, int(round(avg_x - crop_w / 2))), src_w - crop_w))
+                crop_y = int(min(max(0, int(round(avg_y - crop_h / 2))), src_h - crop_h))
+    except Exception:
+        # Any errors (no cv2, ffmpeg frame extraction issues, etc.) -> stick with center crop
+        pass
+
+    # Create a temporary output file
+    tmp = tempfile.NamedTemporaryFile(prefix=f"clipo-{job_id}-", suffix=".mp4", delete=False)
+    out_path = Path(tmp.name)
+    tmp.close()
+
+    vf = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}"
+    cmd = [
+        "ffmpeg", "-y", "-i", str(clip_path),
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-c:a", "copy",
+        str(out_path),
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        out_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Failed to transcode clip: {e.stderr.decode('utf-8', errors='ignore')}")
+
     return FileResponse(
-        path=str(clip_path),
+        path=str(out_path),
         filename=filename,
         media_type="video/mp4",
+        background=BackgroundTask(out_path.unlink, missing_ok=True),
     )
 
 
