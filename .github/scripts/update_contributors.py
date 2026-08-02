@@ -45,16 +45,6 @@ def fetch_counts():
         return dict(FALLBACK)
 
 
-def stat_badge(login, label, query, color):
-    url = (
-        f"https://img.shields.io/badge/dynamic/json"
-        f"?url=https%3A%2F%2Fapi.github.com%2Fusers%2F{login}"
-        f"&query={query}&style=flat-square&label={label}"
-        f"&labelColor=24292f&color={color}"
-    )
-    return f"[![{label}]({url})](https://github.com/{login})"
-
-
 def build_section(counts):
     ordered = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
     total = sum(counts.values())
@@ -68,21 +58,17 @@ def build_section(counts):
     rows = []
     for login, n in ordered:
         meta = META[login]
-        github_cell = " ".join([
-            stat_badge(login, "followers", "followers", "6e40c9"),
-            stat_badge(login, "repos", "public_repos", "1a4fa0"),
-        ])
         rows.append(
             f"| [![{meta['name']}](https://github.com/{login}.png?size=28)]"
             f"(https://github.com/{login}) **{meta['name']}** — "
-            f"[@{login}](https://github.com/{login}) | {meta['role']} | {n} | {github_cell} |"
+            f"[@{login}](https://github.com/{login}) | {meta['role']} |"
         )
 
     return (
         "Made with care by:\n\n"
         + "\n".join(pie_lines)
-        + "\n\n| Contributor | Role | Commits | GitHub |\n"
-        + "| :--- | :--- | :---: | :--- |\n"
+        + "\n\n| Contributor | Role |\n"
+        + "| :--- | :--- |\n"
         + "\n".join(rows)
         + "\n"
     )

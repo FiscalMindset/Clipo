@@ -734,9 +734,11 @@ Jobs are held in-memory. Restarting the backend clears all job state. For persis
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=SACHINN122/Clipo&type=Date)](https://star-history.com/#SACHINN122/Clipo&Date)
+[![GitHub stars](https://img.shields.io/github/stars/SACHINN122/Clipo?style=for-the-badge&logo=github&label=Stars&labelColor=24292f&color=ffd500)](https://star-history.com/#SACHINN122/Clipo&Date)
 
 > Give the repo a ⭐ if you find it useful — it fuels development and shows other creators what's possible.
+
+> ⭐ Track the full growth timeline on [Star History](https://star-history.com/#SACHINN122/Clipo&Date).
 
 ---
 
@@ -751,10 +753,10 @@ pie showData title Commit share (92 total)
     "Vicky Kumar" : 40
 ```
 
-| Contributor | Role | Commits | GitHub |
-| :--- | :--- | :---: | :--- |
-| [![SACHIN PRAJAPATI](https://github.com/SACHINN122.png?size=28)](https://github.com/SACHINN122) **SACHIN PRAJAPATI** — [@SACHINN122](https://github.com/SACHINN122) | Creator | 52 | [![followers](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Fusers%2FSACHINN122&query=followers&style=flat-square&label=followers&labelColor=24292f&color=6e40c9)](https://github.com/SACHINN122) [![repos](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Fusers%2FSACHINN122&query=public_repos&style=flat-square&label=repos&labelColor=24292f&color=1a4fa0)](https://github.com/SACHINN122) |
-| [![Vicky Kumar](https://github.com/FiscalMindset.png?size=28)](https://github.com/FiscalMindset) **Vicky Kumar** — [@FiscalMindset](https://github.com/FiscalMindset) | Co-developer | 40 | [![followers](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Fusers%2FFiscalMindset&query=followers&style=flat-square&label=followers&labelColor=24292f&color=6e40c9)](https://github.com/FiscalMindset) [![repos](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Fusers%2FFiscalMindset&query=public_repos&style=flat-square&label=repos&labelColor=24292f&color=1a4fa0)](https://github.com/FiscalMindset) |
+| Contributor | Role |
+| :--- | :--- |
+| [![SACHIN PRAJAPATI](https://github.com/SACHINN122.png?size=28)](https://github.com/SACHINN122) **SACHIN PRAJAPATI** — [@SACHINN122](https://github.com/SACHINN122) | Creator |
+| [![Vicky Kumar](https://github.com/FiscalMindset.png?size=28)](https://github.com/FiscalMindset) **Vicky Kumar** — [@FiscalMindset](https://github.com/FiscalMindset) | Co-developer |
 <!-- CONTRIBUTORS:END -->
 
 ---
