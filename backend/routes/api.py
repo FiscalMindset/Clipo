@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
+import subprocess
 
 from config import CLIP_DIR
 from models.schemas import (
@@ -264,8 +265,14 @@ async def create_captions(request: Request, job_id: str, clip_id: int, style: st
 
 
 @router.get("/download/{job_id}/{filename}")
-async def download_clip(job_id: str, filename: str):
-    """Download a specific clip file."""
+async def download_clip(request: Request, job_id: str, filename: str, aspect_ratio: str | None = None):
+    """Download a specific clip file.
+
+    Optional query param `aspect_ratio` can be `16:9` or `9:16`. When provided
+    the server will transcode the stored clip to the requested aspect ratio and
+    return a temporary MP4 file. The temporary file is removed after the
+    response is finished.
+    """
     clip_path = CLIP_DIR / job_id / filename
 
     if not clip_path.exists():
@@ -277,10 +284,51 @@ async def download_clip(job_id: str, filename: str):
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # If no aspect requested, return original file
+    if not aspect_ratio:
+        return FileResponse(path=str(clip_path), filename=filename, media_type="video/mp4")
+
+    # Validate aspect
+    if aspect_ratio not in ("16:9", "9:16"):
+        raise HTTPException(status_code=422, detail="Unsupported aspect_ratio; use 16:9 or 9:16")
+
+    # Map to target resolution (use modest defaults to keep transcodes fast)
+    if aspect_ratio == "16:9":
+        target_w, target_h = 1280, 720
+    else:
+        target_w, target_h = 720, 1280
+
+    # Create a temporary output file
+    tmp = tempfile.NamedTemporaryFile(prefix=f"clipo-{job_id}-", suffix=".mp4", delete=False)
+    out_path = Path(tmp.name)
+    tmp.close()
+
+    # Build a scale+pad filter to preserve content and fit the target aspect
+    # Uses: scale=iw*min(TW/iw,TH/ih):ih*min(TW/iw,TH/ih),pad=TW:TH:(ow-iw)/2:(oh-ih)/2
+    scale_expr = f"iw*min({target_w}/iw\\,{target_h}/ih):ih*min({target_w}/iw\\,{target_h}/ih)"
+    pad_expr = f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2"
+    vf = f"scale={scale_expr},{pad_expr}"
+
+    cmd = [
+        "ffmpeg", "-y", "-i", str(clip_path),
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-c:a", "copy",
+        str(out_path),
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        # Cleanup temp file on failure
+        out_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Failed to transcode clip: {e.stderr.decode('utf-8', errors='ignore')}")
+
     return FileResponse(
-        path=str(clip_path),
+        path=str(out_path),
         filename=filename,
         media_type="video/mp4",
+        background=BackgroundTask(out_path.unlink, missing_ok=True),
     )
 
 
