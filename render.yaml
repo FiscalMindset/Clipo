@@ -3,7 +3,7 @@ services:
   - type: web
     name: clipo-api
     env: docker
-    repo: https://github.com/FiscalMindset/Clipo
+    repo: https://github.com/SACHINN122/Clipo
     branch: main
     rootDir: backend
     plan: free
@@ -26,7 +26,7 @@ services:
   - type: web
     name: clipo
     runtime: static
-    repo: https://github.com/FiscalMindset/Clipo
+    repo: https://github.com/SACHINN122/Clipo
     branch: main
     rootDir: frontend
     buildCommand: npm install && npm run build
