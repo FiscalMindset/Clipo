@@ -732,6 +732,50 @@ Jobs are held in-memory. Restarting the backend clears all job state. For persis
 
 ---
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=SACHINN122/Clipo&type=Date)](https://star-history.com/#SACHINN122/Clipo&Date)
+
+> Give the repo a ⭐ if you find it useful — it fuels development and shows other creators what's possible.
+
+---
+
+## Contributors
+
+Made with care by:
+
+<a href="https://github.com/SACHINN122">
+  <img src="https://github.com/SACHINN122.png" width="64" height="64" alt="SACHIN PRAJAPATI" align="left" />
+</a>
+
+**SACHIN PRAJAPATI** — [@SACHINN122](https://github.com/SACHINN122) · Creator · 52 commits
+
+*Pipeline design, backend architecture, deployment (Render + Azure), and core AI workflows.*
+
+<br clear="left" />
+
+<a href="https://github.com/FiscalMindset">
+  <img src="https://github.com/FiscalMindset.png" width="64" height="64" alt="Vicky Kumar" align="left" />
+</a>
+
+**Vicky Kumar** — [@FiscalMindset](https://github.com/FiscalMindset) · Co-developer · 40 commits
+
+*Frontend UI/UX, caption studio, clip metrics, notifications & completion alerts, phone-first experience.*
+
+<br clear="left" />
+
+<a href="https://github.com/anupamme">
+  <img src="https://github.com/anupamme.png" width="64" height="64" alt="Anupam Mediratta" align="left" />
+</a>
+
+**Anupam Mediratta** — [@anupamme](https://github.com/anupamme) · Contributor
+
+*Security fix — react-router upgrade (GHSA-qwww-vcr4-c8h2).*
+
+<br clear="left" />
+
+---
+
 ## Notes
 
 - This project is intended for **local development and personal use**
@@ -741,4 +785,4 @@ Jobs are held in-memory. Restarting the backend clears all job state. For persis
 
 ---
 
-**Made with care — [SACHINN122](https://github.com/SACHINN122)**
+**Made with care by [SACHIN PRAJAPATI](https://github.com/SACHINN122) & [Vicky Kumar](https://github.com/FiscalMindset) — plus [Anupam Mediratta](https://github.com/anupamme) for the security fix.**
