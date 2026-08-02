@@ -1,5 +1,7 @@
 {
-  "dependencies": {
-    "blindfold": "^1.0.1"
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview"
   }
 }
