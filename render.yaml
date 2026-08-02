@@ -13,6 +13,10 @@ services:
         sync: false
       - key: RENDER
         value: "true"
+      - key: BACKEND_URL
+        value: "https://clipo-backend-mh49.onrender.com"
+      - key: FRONTEND_URLS
+        value: "https://clipoai.onrender.com,http://localhost:5173"
       - key: WHISPER_DEVICE
         value: cpu
       - key: WHISPER_COMPUTE_TYPE
