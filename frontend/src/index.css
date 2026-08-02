@@ -2508,6 +2508,18 @@ body {
   gap: 4px;
 }
 
+.mobile-header-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.03);
+}
+
+@media (max-width: 850px) {
+  .header-actions { display: none }
+}
+
 .app-mobile-link {
   position: relative;
   display: flex;

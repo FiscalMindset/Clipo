@@ -161,6 +161,13 @@ export default function ResultsScreen({ jobId, onReset }) {
       .catch((err) => { setError(err.message); setLoading(false); });
   }, [jobId]);
 
+  // Listen for global report-open events (triggered from header)
+  useEffect(() => {
+    const onOpen = () => setShowReportModal(true);
+    window.addEventListener('open-report', onOpen);
+    return () => window.removeEventListener('open-report', onOpen);
+  }, []);
+
   // When clips finish loading for the first time and there are clips,
   // show a small feedback toast prompting the user for feedback.
   useEffect(() => {

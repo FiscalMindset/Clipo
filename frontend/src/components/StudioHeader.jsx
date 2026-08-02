@@ -63,6 +63,9 @@ export default function StudioHeader({ activeTab = 'create', onNavigate, rightSl
 
       <div className="header-actions">
         <span className="local-badge"><i />Local-first</span>
+        <button className="results-quiet" onClick={() => window.dispatchEvent(new CustomEvent('open-report'))}>
+          Report
+        </button>
         {user && (
           <div
             className="user-menu"
@@ -141,6 +144,11 @@ export default function StudioHeader({ activeTab = 'create', onNavigate, rightSl
             </a>
           ))}
         </nav>
+        <div className="mobile-header-actions">
+          <button className="results-quiet" onClick={() => { window.dispatchEvent(new CustomEvent('open-report')); setMenuOpen(false); }}>
+            Report
+          </button>
+        </div>
       </div>
     </header>
   );
