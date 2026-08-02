@@ -61,6 +61,11 @@ RULES:
 - Timestamps must be in seconds (integer or float).
 - Provide a short, catchy title for each clip (suitable as a YouTube Shorts title).
 - Explain briefly why each moment is interesting.
+- Score each clip honestly on three metrics:
+  - hook_strength (integer 0-100): how strong the opening 3 seconds are at grabbing attention.
+  - quality_score (integer 0-100): overall clip quality (story, pacing, value, production fit for shorts).
+  - engagement_prediction ("High", "Medium", or "Low"): expected audience engagement if shared.
+  Use the full 0-100 range — reserve 90+ for truly exceptional moments. Return 0 scores only for clips that fail the criteria above, which should be excluded instead.
 """
 
 
@@ -94,7 +99,7 @@ Video Duration: {duration:.0f} seconds ({duration/60:.1f} minutes)
 TRANSCRIPT WITH TIMESTAMPS:
 {segments_text}
 
-Return a JSON array of the best clip moments. Each clip should have: title, start (seconds), end (seconds), reason."""
+Return a JSON array of the best clip moments. Each clip should have: title, start (seconds), end (seconds), reason, hook_strength (0-100), quality_score (0-100), engagement_prediction ("High", "Medium", or "Low")."""
 
 
 def _estimate_tokens(text: str) -> int:

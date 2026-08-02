@@ -159,6 +159,9 @@ async def generate_clips(
             duration=round(duration, 1),
             thumbnail_url=f"/static/clips/{job_id}/{thumb_filename}",
             video_url=f"/static/clips/{job_id}/{clip_filename}",
+            hook_strength=ts.hook_strength or None,
+            quality_score=ts.quality_score or None,
+            engagement_prediction=ts.engagement_prediction or None,
         )
         clips_info.append(clip_info)
 
