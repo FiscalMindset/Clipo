@@ -95,7 +95,7 @@ function ClipCard({ clip, jobId, onPlay, onRename, onDelete, onStudio }) {
           <span>✦ AI-picked moment</span>
           <span><Icon type="clock" className="result-tag-icon" /> {formatDuration(clip.duration)}</span>
         </div>
-          <div className="result-card-actions">
+        <div className="result-card-actions">
           <button type="button" onClick={() => onPlay(clip)}>
             <Icon type="play" />
             <span>Preview</span>

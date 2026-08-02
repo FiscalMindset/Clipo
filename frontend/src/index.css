@@ -235,6 +235,53 @@
   width: 14px
 }
 
+.preview-download-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.aspect-ratio-dropdown {
+  position: relative;
+}
+
+.aspect-ratio-button {
+  background: #1d1b22;
+  border: 0;
+  color: #cec9d5;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: 11px var(--font-sans);
+}
+
+.aspect-ratio-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 12;
+  background: #201d27;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aspect-ratio-menu li {
+  list-style: none;
+  padding: 6px 10px;
+  cursor: pointer;
+  color: #dedbe4;
+  border-radius: 6px;
+}
+
+.aspect-ratio-menu li:hover {
+  background: #2c2833;
+  color: #fff
+}
+
 .preview-actions button:disabled {
   opacity: .45;
   cursor: not-allowed
@@ -1378,6 +1425,63 @@
     grid-template-columns: 1fr;
     gap: 6px;
   }
+}
+
+/* === Aspect Ratio Dropdown === */
+.result-card-actions-download {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aspect-ratio-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.aspect-ratio-button {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: #b0aec0;
+  font: 500 12px var(--font-sans);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  white-space: nowrap;
+}
+
+.aspect-ratio-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8f7fb;
+}
+
+.aspect-ratio-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+  background: rgba(20, 20, 32, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+
+.aspect-ratio-menu li {
+  padding: 6px 10px;
+  font: 500 12px var(--font-sans);
+  color: #d6d3df;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  border-radius: 6px;
+}
+
+.aspect-ratio-menu li:hover {
+  background: rgba(124, 109, 240, 0.15);
+  color: #c4baff;
 }
 
 /* === Design System === */
@@ -6904,7 +7008,7 @@ body {
   }
 
   /* Ensure the inner SVG respects the wrapper size (overrides width/height attributes) */
-  .processing-ring-wrap > svg.processing-ring-svg,
+  .processing-ring-wrap>svg.processing-ring-svg,
   .processing-ring-svg {
     width: 100% !important;
     height: 100% !important;
