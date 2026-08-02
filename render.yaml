@@ -11,6 +11,8 @@ services:
       # Secrets you will need to fill out in the Render Dashboard:
       - key: GEMINI_API_KEY
         sync: false
+      - key: RENDER
+        value: "true"
       - key: WHISPER_DEVICE
         value: cpu
       - key: WHISPER_COMPUTE_TYPE
