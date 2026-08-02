@@ -764,16 +764,6 @@ Made with care by:
 
 <br clear="left" />
 
-<a href="https://github.com/anupamme">
-  <img src="https://github.com/anupamme.png" width="64" height="64" alt="Anupam Mediratta" align="left" />
-</a>
-
-**Anupam Mediratta** — [@anupamme](https://github.com/anupamme) · Contributor
-
-*Security fix — react-router upgrade (GHSA-qwww-vcr4-c8h2).*
-
-<br clear="left" />
-
 ---
 
 ## Notes
@@ -785,4 +775,4 @@ Made with care by:
 
 ---
 
-**Made with care by [SACHIN PRAJAPATI](https://github.com/SACHINN122) & [Vicky Kumar](https://github.com/FiscalMindset) — plus [Anupam Mediratta](https://github.com/anupamme) for the security fix.**
+**Made with care by [SACHIN PRAJAPATI](https://github.com/SACHINN122) & [Vicky Kumar](https://github.com/FiscalMindset)**
