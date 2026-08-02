@@ -6903,6 +6903,16 @@ body {
     max-height: 88px !important;
   }
 
+  /* Ensure the inner SVG respects the wrapper size (overrides width/height attributes) */
+  .processing-ring-wrap > svg.processing-ring-svg,
+  .processing-ring-svg {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    display: block !important;
+  }
+
   .processing-ring-text strong {
     font-size: 18px !important;
   }
