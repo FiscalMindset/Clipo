@@ -16,7 +16,7 @@ export default function ReportScreen() {
     const [expected, setExpected] = useState('');
     const [actual, setActual] = useState('');
     const [status, setStatus] = useState('editing'); // editing | submitting | sent | error
-    const [issueUrl, setIssueUrl] = useState(null);
+    const [issueUrls, setIssueUrls] = useState([]);
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
@@ -34,7 +34,10 @@ export default function ReportScreen() {
                 expected: expected.trim(),
                 actual: actual.trim(),
             });
-            setIssueUrl(res.issue_url || null);
+            const urls = Array.isArray(res.issue_urls) && res.issue_urls.length
+                ? res.issue_urls
+                : (res.issue_url ? [res.issue_url] : []);
+            setIssueUrls(urls);
             setStatus('sent');
         } catch (err) {
             setStatus('error');
@@ -53,10 +56,18 @@ export default function ReportScreen() {
                         <div className="report-sent">
                             <h3>Thanks for reporting</h3>
                             <p>We received your {type} report and will review it shortly.</p>
-                            {issueUrl && (
+                            {issueUrls.length > 0 && (
                                 <p className="report-issue-link">
-                                    It was filed as a GitHub issue —{' '}
-                                    <a href={issueUrl} target="_blank" rel="noopener noreferrer">track it here</a>.
+                                    {issueUrls.length === 1
+                                        ? 'It was filed as a GitHub issue — '
+                                        : `It was filed as ${issueUrls.length} GitHub issues — `}
+                                    {issueUrls.map((u, i) => (
+                                        <span key={u}>
+                                            <a href={u} target="_blank" rel="noopener noreferrer">track it here</a>
+                                            {i < issueUrls.length - 1 ? ' · ' : ''}
+                                        </span>
+                                    ))}
+                                    .
                                 </p>
                             )}
                             <div className="report-actions">

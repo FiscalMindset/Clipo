@@ -45,13 +45,17 @@ _REPORT_TYPE_LABELS = {
 }
 
 
-def _create_github_issue(report: dict) -> str | None:
-    """Create a GitHub issue for a report. Returns the issue URL, or None."""
+def _create_github_issue(report: dict) -> list[str]:
+    """Create a GitHub issue in every configured repo whose token allows it.
+
+    Returns a list of the issue URLs that were actually created (empty when
+    the integration is not configured or every repo rejected the token).
+    """
     import httpx
-    from config import GITHUB_TOKEN, GITHUB_REPO
+    from config import GITHUB_TOKEN, GITHUB_REPOS
 
     if not GITHUB_TOKEN:
-        return None
+        return []
 
     title = (report.get("title") or "").strip() or (report.get("message") or "")[:60]
     labels = list(_REPORT_TYPE_LABELS.get(report.get("type", "bug"), ["bug"]))
@@ -74,18 +78,26 @@ def _create_github_issue(report: dict) -> str | None:
         f"- **Clip:** `{report.get('clip_id') or '-'}`"
     )
 
-    resp = httpx.post(
-        f"https://api.github.com/repos/{GITHUB_REPO}/issues",
-        headers={
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        json={"title": title, "body": "\n\n".join(sections), "labels": labels},
-        timeout=20,
-    )
-    resp.raise_for_status()
-    return resp.json().get("html_url")
+    body = "\n\n".join(sections)
+    created: list[str] = []
+    for repo in GITHUB_REPOS:
+        try:
+            resp = httpx.post(
+                f"https://api.github.com/repos/{repo}/issues",
+                headers={
+                    "Authorization": f"Bearer {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                json={"title": title, "body": body, "labels": labels},
+                timeout=20,
+            )
+            resp.raise_for_status()
+            created.append(resp.json().get("html_url"))
+        except Exception:
+            # token may not have access to this repo; try the next one
+            continue
+    return created
 
 
 @router.post('/report')
@@ -130,12 +142,12 @@ async def report_issue(request: Request, job_id: str | None = None, clip_id: int
     except Exception:
         raise HTTPException(status_code=500, detail="Could not save report")
 
-    # Create a GitHub issue when the integration is configured
-    issue_url = None
+    # Create GitHub issues when the integration is configured
+    issue_urls: list[str] = []
     try:
-        issue_url = _create_github_issue(report)
+        issue_urls = _create_github_issue(report)
     except Exception:
-        issue_url = None
+        issue_urls = []
 
     # Attempt to send an email to support if SMTP is configured
     try:
@@ -167,7 +179,11 @@ async def report_issue(request: Request, job_id: str | None = None, clip_id: int
     except Exception:
         pass
 
-    return {"status": "ok", "issue_url": issue_url}
+    return {
+        "status": "ok",
+        "issue_url": issue_urls[0] if issue_urls else None,
+        "issue_urls": issue_urls,
+    }
 
 
 

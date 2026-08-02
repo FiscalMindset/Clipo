@@ -163,4 +163,7 @@ SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "")
 
 # --- GitHub issue integration (in-app reports become issues) ---
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+# Comma-separated list of "owner/repo" pairs; an issue is created in each repo
+# whose token allows it, so both a fork and the upstream can be targeted.
 GITHUB_REPO = os.getenv("GITHUB_REPO", "SACHINN122/Clipo")
+GITHUB_REPOS = [r.strip() for r in GITHUB_REPO.split(",") if r.strip()] or ["SACHINN122/Clipo"]
