@@ -85,6 +85,8 @@ graph TB
 | **Whisper transcription** | Local speech-to-text with word-level timestamps (Faster Whisper) |
 | **AI moment detection** | Gemini or NVIDIA NIM finds hooks, stories, insights, and emotional beats |
 | **Auto clip generation** | FFmpeg cuts and exports the best moments as short clips |
+| **AI clip metrics** | Every clip scored on hook strength, quality score, and engagement prediction (old jobs fall back to "Not available") |
+| **Completion alerts** | Desktop notification plus an audio chime when a job finishes — works even in a background tab |
 | **Caption Studio** | Interactive phone preview with styled presets: Classic, Neon, Bold, Minimal |
 | **Google OAuth** | One-click Google login, JWT session cookie |
 | **Job library** | Track, revisit, and manage all past jobs from a central library |
@@ -483,7 +485,8 @@ clipo/
 │   │   ├── lib/
 │   │   │   ├── api.js               # API client (fetch + error handling)
 │   │   │   ├── auth.js              # OAuth helpers
-│   │   │   └── notifications.js     # Browser notification API
+│   │   │   ├── notifications.js     # Browser notification API
+│   │   │   └── sound.js             # Web Audio unlock + completion chime
 │   │   ├── App.jsx                   # Screen router + state
 │   │   ├── main.jsx                  # React root
 │   │   └── index.css                 # Tailwind + custom styles
