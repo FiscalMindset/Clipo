@@ -6,8 +6,19 @@ Clipo is a local-first AI clip studio that ingests long-form video — uploaded 
 
 ---
 
+## Star History
+
+![Star History Chart](images/star-history.svg)
+
+> Give the repo a ⭐ if you find it useful — it fuels development and shows other creators what's possible.
+
+> ⭐ Track the full growth timeline on [Star History](https://star-history.com/#SACHINN122/Clipo&Date).
+
+---
+
 ## Table of Contents
 
+- [Star History](#star-history)
 - [Architecture](#architecture)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
@@ -22,6 +33,7 @@ Clipo is a local-first AI clip studio that ingests long-form video — uploaded 
 - [Environment Variables](#environment-variables)
 - [GPU / CUDA Setup](#gpu--cuda-setup)
 - [Troubleshooting](#troubleshooting)
+- [Contributing](CONTRIBUTING.md)
 
 ---
 
@@ -729,16 +741,6 @@ lsof -ti:8001 | xargs kill -9
 Jobs are held in-memory. Restarting the backend clears all job state. For persistent storage, the job store would need to be swapped for a database (not yet implemented).
 
 </details>
-
----
-
-## Star History
-
-![Star History Chart](images/star-history.svg)
-
-> Give the repo a ⭐ if you find it useful — it fuels development and shows other creators what's possible.
-
-> ⭐ Track the full growth timeline on [Star History](https://star-history.com/#SACHINN122/Clipo&Date).
 
 ---
 
