@@ -12,6 +12,10 @@ from starlette.background import BackgroundTask
 import subprocess
 
 from config import CLIP_DIR
+
+# API router
+from fastapi import APIRouter
+router = APIRouter(prefix="/api")
 from models.schemas import (
     UploadResponse,
     YouTubeRequest,
@@ -34,7 +38,69 @@ from services.caption_service import generate_captioned_clip, list_styles
 from routes.auth import get_current_user, require_user
 
 
-router = APIRouter(prefix="/api")
+@router.post('/report')
+async def report_issue(request: Request, job_id: str | None = None, clip_id: int | None = None, message: str | None = None):
+    """Accept user-submitted reports/feedback and store them locally.
+
+    This is intentionally simple: reports are written to the backend `TEMP_DIR`
+    as JSON files for later inspection. In production you'd forward these to
+    logging/issue trackers or a support inbox.
+    """
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {"message": message}
+
+    report = {
+        "job_id": job_id or payload.get("job_id"),
+        "clip_id": clip_id or payload.get("clip_id"),
+        "message": payload.get("message") if payload.get("message") is not None else message,
+        "user_id": user_id,
+    }
+
+    try:
+        import json, time
+        fname = TEMP_DIR / f"report-{int(time.time())}.json"
+        fname.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+    except Exception:
+        raise HTTPException(status_code=500, detail="Could not save report")
+
+    # Attempt to send an email to support if SMTP is configured
+    try:
+        from config import SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_USE_TLS, SUPPORT_EMAIL
+        if SMTP_HOST and SUPPORT_EMAIL:
+            try:
+                import json as _json
+                from email.message import EmailMessage
+                import smtplib
+
+                msg = EmailMessage()
+                subj = f"Clipo report" + (f" (job {report['job_id']})" if report.get('job_id') else '')
+                msg['Subject'] = subj
+                msg['From'] = SMTP_USER or f"noreply@{SMTP_HOST.split(':')[0]}"
+                msg['To'] = SUPPORT_EMAIL
+                body = _json.dumps(report, ensure_ascii=False, indent=2)
+                msg.set_content(body)
+
+                smtp = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+                if SMTP_USE_TLS:
+                    smtp.starttls()
+                if SMTP_USER and SMTP_PASS:
+                    smtp.login(SMTP_USER, SMTP_PASS)
+                smtp.send_message(msg)
+                smtp.quit()
+            except Exception:
+                # don't fail the request if email can't be sent; we still saved the report
+                pass
+    except Exception:
+        pass
+
+    return {"status": "ok"}
+
+
 
 
 @router.get("/health")

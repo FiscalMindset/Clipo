@@ -152,3 +152,11 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 FRONTEND_URLS = [u.strip() for u in os.getenv("FRONTEND_URLS", FRONTEND_URL).split(",") if u.strip()]
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8001")
 SESSION_COOKIE_SECRET = os.getenv("SESSION_COOKIE_SECRET", secrets.token_hex(32))
+
+# --- Email / support settings ---
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes")
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "")
