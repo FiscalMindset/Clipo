@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getStatus } from '../lib/api';
-import { showCompletionNotification, requestNotificationPermission, getNotificationPermission, showTestNotification } from '../lib/notifications';
+import { requestNotificationPermission, getNotificationPermission, showTestNotification } from '../lib/notifications';
+import { unlockAudio, playCompletionChime } from '../lib/sound';
 import ClipoMark from './ClipoMark';
 
 const POLL_INTERVAL = 2000;
@@ -50,6 +51,11 @@ function formatElapsed(seconds) {
   return `${h}h ${(m % 60).toString().padStart(2, '0')}m`;
 }
 
+function isMacOS() {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPhone|iPad/.test(navigator.platform || '') || /Macintosh/.test(navigator.userAgent || '');
+}
+
 function AiUsageBadge({ aiUsage }) {
   if (!aiUsage) return null;
   const provider = aiUsage.provider || 'Unknown';
@@ -77,7 +83,7 @@ function ProgressRing({ progress, size = 152, stroke = 8 }) {
   const offset = circumference * (1 - progress / 100);
   return (
     <div className="processing-ring-wrap" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="processing-ring-svg" aria-hidden="true">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="processing-ring-svg" aria-hidden="true">
         <defs>
           <linearGradient id="processing-ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#7c3aed" />
@@ -256,18 +262,17 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
   const [clipCount, setClipCount] = useState(0);
   const [notifyStatus, setNotifyStatus] = useState(() => {
     const browserPerm = getNotificationPermission();
-    if (browserPerm === 'granted' && notifyWhenComplete) return 'granted';
-    if (browserPerm === 'granted') return 'granted';
-    if (browserPerm === 'denied') return 'denied';
     if (browserPerm === 'unsupported') return 'unsupported';
-    return notifyWhenComplete ? 'granted' : 'off';
+    if (browserPerm === 'denied') return 'denied';
+    if (browserPerm === 'granted') return notifyWhenComplete ? 'granted' : 'off';
+    return notifyWhenComplete ? 'default' : 'off';
   });
   const [testResult, setTestResult] = useState(null);
+  const [notifyTipDismissed, setNotifyTipDismissed] = useState(() => {
+    try { return sessionStorage.getItem('clipo_notify_tip_dismissed') === '1'; } catch { return false; }
+  });
   const [copied, setCopied] = useState(false);
   const stepStartedAtRef = useRef({});
-  const notifyWantedRef = useRef(notifyWhenComplete);
-
-  useEffect(() => { notifyWantedRef.current = notifyWhenComplete; }, [notifyWhenComplete]);
 
   // Re-sync with browser permission state when the tab regains focus
   useEffect(() => {
@@ -307,10 +312,6 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
         if (data.ai_usage) setAiUsage(data.ai_usage);
         if (data.clips_generated != null) setClipCount(data.clips_generated);
         if (data.status === 'completed') {
-          // Use the ref so a toggle-during-processing is honored
-          if (notifyWantedRef.current && getNotificationPermission() === 'granted') {
-            showCompletionNotification(jobId, jobDetails?.videoName);
-          }
           onComplete();
           return;
         }
@@ -336,9 +337,9 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
 
   const handleNotifyToggle = async () => {
     setTestResult(null);
+    unlockAudio();
     if (notifyStatus === 'granted') {
       setNotifyStatus('off');
-      notifyWantedRef.current = false;
       onNotificationChange?.(false);
       return;
     }
@@ -346,7 +347,6 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
     const result = await requestNotificationPermission();
     if (result === 'granted') {
       setNotifyStatus('granted');
-      notifyWantedRef.current = true;
       onNotificationChange?.(true);
     } else if (result === 'denied') {
       setNotifyStatus('denied');
@@ -357,10 +357,17 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
 
   const handleTestNotification = () => {
     setTestResult(null);
+    unlockAudio();
+    playCompletionChime();
     const res = showTestNotification();
     setTestResult(res);
     setTimeout(() => setTestResult(null), 4000);
   };
+
+  function dismissNotifyTip() {
+    setNotifyTipDismissed(true);
+    try { sessionStorage.setItem('clipo_notify_tip_dismissed', '1'); } catch { /* ignore */ }
+  }
 
   function copyJobId() {
     if (!jobId) return;
@@ -384,11 +391,13 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
     : 'violet';
 
   const notifyHelpText = notifyStatus === 'granted'
-    ? 'You will be notified when exports are ready.'
+    ? 'A sound ping + desktop notification when exports are ready.'
     : notifyStatus === 'denied'
-    ? 'Blocked by your browser. Enable in site settings.'
+    ? 'Blocked by your browser. Enable in site settings — the sound ping still works.'
     : notifyStatus === 'unsupported'
     ? 'Not available in this browser.'
+    : notifyStatus === 'default'
+    ? 'Click the switch to allow desktop notifications.'
     : 'Get a desktop ping when exports are ready.';
 
   // Estimated time remaining (rough heuristic: 60s per non-complete step)
@@ -527,8 +536,8 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
                   <Icon type="sparkles" />
                   <span>Estimated remaining<strong>{estRemaining > 0 ? `~${formatElapsed(estRemaining)}` : 'Wrapping up'}</strong></span>
                 </div>
-                <div>
-                  <Icon type="video" />
+                <div className={`processing-times-status ${error ? 'is-failed' : clipCount > 0 ? 'is-ready' : 'is-live'}`}>
+                  <span className="processing-times-dot" />
                   <span>Status<strong>{error ? 'Failed' : clipCount > 0 ? `${clipCount} ready` : 'Active'}</strong></span>
                 </div>
               </div>
@@ -621,7 +630,7 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
                           exit={{ opacity: 0 }}
                         >
                           {testResult.ok
-                            ? 'Test notification sent'
+                            ? 'Test ping sent'
                             : testResult.reason === 'denied'
                             ? 'Browser is blocking notifications'
                             : testResult.reason === 'unsupported'
@@ -630,6 +639,14 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
                         </motion.span>
                       )}
                     </AnimatePresence>
+                    {isMacOS() && !notifyTipDismissed && (
+                      <div className="processing-notify-tip">
+                        <span>Can't see the banner? macOS may be blocking it — you'll still hear the ping.</span>
+                        <button type="button" className="processing-notify-tip-close" onClick={dismissNotifyTip} aria-label="Dismiss tip">
+                          <Icon type="x" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
                 {notifyStatus === 'denied' && (

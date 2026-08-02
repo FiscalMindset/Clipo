@@ -1,8 +1,10 @@
-import { useState, useCallback, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import { startProcessing, getStatus } from './lib/api';
+import { showCompletionNotification, getNotificationPermission } from './lib/notifications';
+import { playCompletionChime } from './lib/sound';
 import UploadScreen from './components/UploadScreen';
 import ProcessingScreen from './components/ProcessingScreen';
 import ResultsScreen from './components/ResultsScreen';
@@ -28,6 +30,8 @@ function Studio() {
   const [notifyWhenComplete, setNotifyWhenComplete] = useState(false);
   const [startupError, setStartupError] = useState(null);
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
+  const armedJobRef = useRef(null);
+  const notifiedJobsRef = useRef(new Set());
 
   useEffect(() => {
     const goOnline = () => setIsOffline(false);
@@ -42,6 +46,7 @@ function Studio() {
 
   const handleProcessingStart = useCallback(async (newJobId, options = {}) => {
     setJobId(newJobId);
+    armedJobRef.current = newJobId;
     setNotifyWhenComplete(Boolean(options.notifyWhenComplete));
     setJobDetails({
       videoName: options.videoName || 'Untitled video',
@@ -67,9 +72,43 @@ function Studio() {
   const handleReset = useCallback(() => {
     setScreen(SCREEN.UPLOAD);
     setJobId(null);
+    armedJobRef.current = null;
     setJobDetails(null);
     setNotifyWhenComplete(false);
   }, []);
+
+  // Completion alert watcher: runs while any armed job is active, no matter
+  // which screen the user is on (the Processing screen unmounts when they
+  // navigate elsewhere, which used to kill notifications with it).
+  useEffect(() => {
+    if (!jobId || armedJobRef.current !== jobId || !notifyWhenComplete) return;
+    let active = true;
+    let timeoutId;
+    const WATCH_MS = 5000;
+    async function watch() {
+      try {
+        const data = await getStatus(jobId);
+        if (!active) return;
+        if (data.status === 'completed') {
+          if (!notifiedJobsRef.current.has(jobId)) {
+            notifiedJobsRef.current.add(jobId);
+            playCompletionChime();
+            if (getNotificationPermission() === 'granted') {
+              showCompletionNotification(jobId, jobDetails?.videoName);
+            }
+          }
+          return;
+        }
+        if (data.status === 'failed') return;
+      } catch {
+        // Offline or transient error — keep watching.
+      }
+      if (!active) return;
+      timeoutId = setTimeout(watch, WATCH_MS);
+    }
+    watch();
+    return () => { active = false; clearTimeout(timeoutId); };
+  }, [jobId, notifyWhenComplete, jobDetails?.videoName]);
 
   const handleVisitJob = useCallback(async (jobId, jobDetails) => {
     try {

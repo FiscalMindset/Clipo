@@ -70,6 +70,22 @@ class ClipTimestamp(BaseModel):
     start: float = Field(..., description="Start time in seconds")
     end: float = Field(..., description="End time in seconds")
     reason: str = Field(..., description="Why this moment is interesting")
+    hook_strength: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="How strong the opening 3-second hook is, scored 0-100",
+    )
+    quality_score: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="Overall clip quality score, 0-100",
+    )
+    engagement_prediction: str = Field(
+        default="Medium",
+        description="Predicted engagement: High, Medium, or Low",
+    )
 
 
 class TranscriptSegment(BaseModel):
@@ -94,3 +110,6 @@ class ClipInfo(BaseModel):
     duration: float
     thumbnail_url: str
     video_url: str
+    hook_strength: Optional[int] = None
+    quality_score: Optional[int] = None
+    engagement_prediction: Optional[str] = None

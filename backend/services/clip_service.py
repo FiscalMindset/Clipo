@@ -39,10 +39,11 @@ def _generate_single_clip_sync(
     """Generate a single clip using FFmpeg (sync, runs in executor)."""
     duration = end - start
 
-    # Dynamic timeout: at least 120s, scaled by clip duration.
-    # `libx264 preset=fast` encodes at roughly 0.3–0.5× realtime on CPU,
-    # so a 2-minute clip can need 4+ minutes.
-    timeout = max(120, int(duration * 3 + 30))
+    # Dynamic timeout: at least 300s, scaled by clip duration. On a single
+    # vCPU (Azure free tier) `libx264 preset=fast` encodes at roughly
+    # 0.2× realtime, so a 1-minute clip can need ~5 minutes and a longer
+    # clip several more. Capped at 30 minutes per clip.
+    timeout = max(300, min(int(duration * 12 + 60), 1800))
 
     # Always produce browser-compatible MP4 clips. Stream-copying retains the
     # source audio codec (often Opus or an unsupported codec in downloaded
@@ -158,6 +159,9 @@ async def generate_clips(
             duration=round(duration, 1),
             thumbnail_url=f"/static/clips/{job_id}/{thumb_filename}",
             video_url=f"/static/clips/{job_id}/{clip_filename}",
+            hook_strength=ts.hook_strength or None,
+            quality_score=ts.quality_score or None,
+            engagement_prediction=ts.engagement_prediction or None,
         )
         clips_info.append(clip_info)
 
