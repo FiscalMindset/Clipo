@@ -734,7 +734,7 @@ Jobs are held in-memory. Restarting the backend clears all job state. For persis
 
 ## Star History
 
-[![GitHub stars](https://img.shields.io/github/stars/SACHINN122/Clipo?style=for-the-badge&logo=github&label=Stars&labelColor=24292f&color=ffd500)](https://star-history.com/#SACHINN122/Clipo&Date)
+![Star History Chart](images/star-history.svg)
 
 > Give the repo a ⭐ if you find it useful — it fuels development and shows other creators what's possible.
 

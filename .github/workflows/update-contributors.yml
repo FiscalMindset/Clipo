@@ -29,14 +29,20 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python .github/scripts/update_contributors.py
 
+      - name: Regenerate Star History chart
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python .github/scripts/update_star_history.py
+
       - name: Commit if changed
         run: |
-          if git diff --quiet README.md; then
-            echo "contributor stats unchanged; nothing to commit"
+          git add README.md images/star-history.svg
+          if git diff --cached --quiet; then
+            echo "no changes; nothing to commit"
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add README.md
-            git commit -m "docs(readme): auto-update contributor stats"
+            git commit -m "docs(readme): auto-update contributor stats and star history"
             git push
           fi
