@@ -19,33 +19,10 @@ META = {
     "SACHINN122": {
         "name": "SACHIN PRAJAPATI",
         "role": "Creator",
-        "palette": ("#fff4e0", "#7a4a00", "#ffd58a"),
-        "tags": [
-            "Pipeline design",
-            "Backend architecture",
-            "Core AI workflows",
-            "YouTube & caption backends",
-            "Clip download & cropping",
-            "FFmpeg error handling",
-        ],
     },
     "FiscalMindset": {
         "name": "Vicky Kumar",
         "role": "Co-developer",
-        "palette": ("#e6f0ff", "#1a4fa0", "#9dc2ff"),
-        "tags": [
-            "Frontend UI/UX",
-            "Phone-first design",
-            "Caption studio & results UI",
-            "AI clip metrics",
-            "Notifications & alerts",
-            "PWA install",
-            "Job persistence",
-            "YouTube resilience",
-            "Auth & OAuth",
-            "Deployment (Render + Azure)",
-            "ffmpeg timeout scaling",
-        ],
     },
 }
 
@@ -68,12 +45,14 @@ def fetch_counts():
         return dict(FALLBACK)
 
 
-def chip(label, bg, fg, border):
-    return (
-        f'<span style="background:{bg};color:{fg};border:1px solid {border};'
-        f'padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;'
-        f'white-space:nowrap">{label}</span>'
+def stat_badge(login, label, query, color):
+    url = (
+        f"https://img.shields.io/badge/dynamic/json"
+        f"?url=https%3A%2F%2Fapi.github.com%2Fusers%2F{login}"
+        f"&query={query}&style=flat-square&label={label}"
+        f"&labelColor=24292f&color={color}"
     )
+    return f"[![{label}]({url})](https://github.com/{login})"
 
 
 def build_section(counts):
@@ -89,18 +68,20 @@ def build_section(counts):
     rows = []
     for login, n in ordered:
         meta = META[login]
-        bg, fg, border = meta["palette"]
-        tags = " ".join(chip(t, bg, fg, border) for t in meta["tags"])
+        github_cell = " ".join([
+            stat_badge(login, "followers", "followers", "6e40c9"),
+            stat_badge(login, "repos", "public_repos", "1a4fa0"),
+        ])
         rows.append(
             f"| [![{meta['name']}](https://github.com/{login}.png?size=28)]"
             f"(https://github.com/{login}) **{meta['name']}** — "
-            f"[@{login}](https://github.com/{login}) | {meta['role']} | {n} | {tags} |"
+            f"[@{login}](https://github.com/{login}) | {meta['role']} | {n} | {github_cell} |"
         )
 
     return (
         "Made with care by:\n\n"
         + "\n".join(pie_lines)
-        + "\n\n| Contributor | Role | Commits | Focus areas |\n"
+        + "\n\n| Contributor | Role | Commits | GitHub |\n"
         + "| :--- | :--- | :---: | :--- |\n"
         + "\n".join(rows)
         + "\n"
