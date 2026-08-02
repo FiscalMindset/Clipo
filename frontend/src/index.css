@@ -5292,6 +5292,8 @@ body {
 
 .processing-ring-svg {
   display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .processing-ring-text {
@@ -5303,8 +5305,8 @@ body {
   justify-content: center;
   background: #16141d;
   border-radius: 50%;
-  width: calc(100% - 18px);
-  height: calc(100% - 18px);
+  width: calc(100% - 24px);
+  height: calc(100% - 24px);
   margin: auto;
   pointer-events: none;
 }
@@ -5423,7 +5425,7 @@ body {
 .processing-times {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  gap: 12px;
   margin-top: 22px;
   padding-top: 18px;
   border-top: 1px solid rgba(255, 255, 255, .07)
@@ -5431,17 +5433,83 @@ body {
 
 .processing-times>div {
   display: flex;
-  gap: 9px;
+  gap: 11px;
   align-items: center;
   color: #817d8b;
   min-width: 0;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #14141a 0%, #101015 100%);
+  border: 1px solid #26232c;
+  border-radius: 12px;
 }
 
 .processing-times svg {
-  width: 16px;
-  height: 16px;
-  color: #b496f8;
+  width: 17px;
+  height: 17px;
+  color: #cbb8ff;
   flex-shrink: 0;
+  padding: 7px;
+  box-sizing: content-box;
+  background: rgba(124, 109, 240, .14);
+  border: 1px solid rgba(124, 109, 240, .25);
+  border-radius: 9px;
+}
+
+.processing-times span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.25;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.processing-times strong {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #eceaf3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.processing-times-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.processing-times-status.is-live .processing-times-dot {
+  background: #34d399;
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, .5);
+  animation: processingPulse 1.8s ease-out infinite;
+}
+
+.processing-times-status.is-live strong {
+  color: #34d399;
+}
+
+.processing-times-status.is-ready .processing-times-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, .15);
+}
+
+.processing-times-status.is-ready strong {
+  color: #f59e0b;
+}
+
+.processing-times-status.is-failed .processing-times-dot {
+  background: #fb7185;
+  box-shadow: 0 0 0 3px rgba(224, 108, 119, .15);
+}
+
+.processing-times-status.is-failed strong {
+  color: #fb7185;
 }
 
 .processing-stats-row {
@@ -5880,6 +5948,38 @@ body {
   line-height: 1.45;
   padding-top: 8px;
   border-top: 1px solid rgba(224, 108, 119, 0.15);
+}
+
+.processing-notify-tip {
+  margin: 0;
+  font-size: 11px;
+  color: #9a97a5;
+  line-height: 1.45;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.processing-notify-tip-close {
+  border: 0;
+  background: transparent;
+  color: #6f6c78;
+  padding: 1px 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.processing-notify-tip-close:hover {
+  color: #c9c6d1;
+}
+
+.processing-notify-tip-close svg {
+  width: 12px;
+  height: 12px;
 }
 
 .processing-notify-card.tone-amber .processing-notify-help {
@@ -6417,6 +6517,12 @@ body {
   }
 }
 
+@media(max-width:920px) {
+  .processing-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media(max-width:760px) {
   .processing-frame {
     padding: 20px 20px 48px
@@ -6522,11 +6628,6 @@ body {
   .processing-ring-wrap {
     width: 96px !important;
     height: 96px !important;
-  }
-
-  .processing-ring-text {
-    width: calc(100% - 14px);
-    height: calc(100% - 14px);
   }
 
   .processing-ring-text strong {
@@ -6754,7 +6855,7 @@ body {
     display: flex
   }
 
-  .app-header nav {
+  .app-header > nav {
     display: none;
     margin-left: 0;
     order: 3;
@@ -6765,11 +6866,11 @@ body {
     border-top: 1px solid rgba(255, 255, 255, .05)
   }
 
-  .app-header nav.nav-open {
+  .app-header > nav.nav-open {
     display: flex
   }
 
-  .app-header nav a {
+  .app-header > nav a {
     font-size: 13px;
     padding: 8px 0;
   }
@@ -6797,11 +6898,11 @@ body {
     padding: 4px 8px
   }
 
-  .app-header nav {
+  .app-header > nav {
     gap: 12px
   }
 
-  .app-header nav a {
+  .app-header > nav a {
     font-size: 12px
   }
 }

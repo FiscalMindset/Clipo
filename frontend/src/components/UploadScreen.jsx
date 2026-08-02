@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { uploadVideo, submitYouTubeUrl, getConfig } from '../lib/api';
 import { requestNotificationPermission, supportsNotifications } from '../lib/notifications';
+import { unlockAudio } from '../lib/sound';
 import StudioHeader from './StudioHeader';
 
 const ACCEPTED_TYPES = '.mp4,.mov,.mkv,.avi';
@@ -102,6 +103,7 @@ export default function UploadScreen({ onProcessingStart, onNavigate, onVisitJob
     setUploading(true);
     setError('');
     setUploadProgress(0);
+    unlockAudio();
     try {
       let notificationsEnabled = notify;
       if (notify) notificationsEnabled = (await requestNotificationPermission()) === 'granted';
