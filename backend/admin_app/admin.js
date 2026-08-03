@@ -20,6 +20,7 @@ const PAGES = {
   requests:  { title: "Requests",  icon: "⌁" },
   users:     { title: "Users",     icon: "👤" },
   jobs:      { title: "Jobs",      icon: "◫" },
+  online:    { title: "Live",      icon: "◉" },
   events:    { title: "Events",    icon: "☰" },
   backends:  { title: "Backends",  icon: "⬡" },
   logs:      { title: "Server logs", icon: "≡" },
@@ -103,6 +104,17 @@ function deviceIcon(browser, os, device) {
   else if (/mac/i.test(os || "")) icon = "💻";
   else if (/windows/i.test(os || "")) icon = "🖥";
   return icon;
+}
+function userName(row) {
+  return String(row.name || row.display_name || "").trim() || String(row.email || "").trim();
+}
+function userCell(row, idKey) {
+  const label = userName(row) || String(row[idKey] || "—");
+  const pic = row.picture;
+  return (pic
+    ? `<img class="uavatar" src="${esc(pic)}" alt="" onerror="this.style.display='none'">`
+    : `<span class="uavatar uavatar-fallback">${esc((userName(row) || "?").slice(0, 1).toUpperCase())}</span>`) +
+    `<span class="uname">${esc(trunc(label, 28))}${row[idKey] && userName(row) ? `<span class="faint mono">${esc(trunc(row[idKey], 14))}</span>` : ""}</span>`;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -455,6 +467,7 @@ function renderOverview() {
       { v: fmtNum(s.requests_total), l: "Requests tracked", d: { t: `${s.requests_24h} in 24h · ${s.request_error_rate_24h}% errors`, c: "", dir: "flat" } },
       { v: s.avg_latency_ms ? `${s.avg_latency_ms}ms` : "—", l: "Avg latency (7d)", d: { t: s.p95_latency_ms ? `p95 ${s.p95_latency_ms}ms` : "", c: "", dir: "flat" } },
       { v: fmtNum(s.active_users_7d), l: "Active users (7d)", d: { t: "", c: "", dir: "flat" } },
+      { v: fmtNum(s.users_online_now), l: "Online now", d: { t: `${s.users_active_1h} in 1h · ${s.users_active_24h} in 24h`, c: "", dir: s.users_online_now ? "up" : "flat" } },
       { v: fmtNum(s.backends_online), l: "Backends online", d: { t: "", c: "", dir: s.backends_online ? "up" : "down" } },
       { v: fmtNum(s.events_24h), l: "Events (24h)", d: { t: s.errors_24h ? `${s.errors_24h} errors` : "", c: "", dir: "flat" } },
     ];
@@ -479,6 +492,12 @@ function renderOverview() {
       <div class="grid cols-2">
         <div class="panel"><h3>Top endpoints · 14 days</h3><div id="bar-endpoints"></div></div>
         <div class="panel"><h3>Job status</h3><div id="donut-jobs"></div></div>
+      </div>
+
+      <div style="height:16px"></div>
+      <div class="grid cols-2">
+        <div class="panel"><h3>Top users · 14 days</h3><div id="top-users"></div></div>
+        <div class="panel"><h3>Job source mix · 14 days</h3><div id="bar-sources"></div></div>
       </div>`;
 
     const loginMap = Object.fromEntries(s.logins_series.map((p) => [p.day, p.n]));
@@ -500,6 +519,14 @@ function renderOverview() {
       { label: "Failed", n: s.jobs_failed },
       { label: "Other", n: Math.max(0, s.total_jobs - s.jobs_completed - s.jobs_failed) },
     ], { label: "jobs" });
+    hBar($("#top-users"), s.top_users, {
+      labelFn: (r) => userCell(r, "id"),
+      valFn: (r) => `${fmtNum(r.requests)} req <span class="faint">${r.errors ? "· " + r.errors + " err" : ""}</span>`,
+    });
+    hBar($("#bar-sources"), s.job_source_mix, {
+      labelFn: (r) => `<span class="badge b-gray">${esc(r.label || "—")}</span>`,
+      valFn: (r) => `${r.n} <span class="faint">${r.completed ? "· " + r.completed + " done" : ""}${r.failed ? " · " + r.failed + " failed" : ""}</span>`,
+    });
   }).catch((e) => {
     el.innerHTML = `<div class="panel"><div class="error">${esc(e.message)}</div></div>`;
   });
@@ -547,32 +574,36 @@ function renderAnalytics() {
   }
 
   if (S.tab === "breakdown") {
-    const kinds = ["auth", "requests"];
+    const kinds = ["auth", "requests", "jobs"];
     const dimsAuth = [["frontend", "Frontend origin"], ["backend", "Backend"], ["browser", "Browser"], ["os", "OS"], ["device", "Device"], ["status", "Status"]];
     const dimsReq = [["path", "Path"], ["frontend", "Frontend"], ["backend", "Backend"], ["method", "Method"], ["status", "Status"], ["browser", "Browser"], ["os", "OS"], ["device", "Device"]];
+    const dimsJobs = [["source_type", "Source type"], ["status", "Status"], ["user", "User"], ["provider", "AI provider"]];
     const kind = S.brKind || "auth";
-    const dims = kind === "auth" ? dimsAuth : dimsReq;
+    const dims = kind === "auth" ? dimsAuth : (kind === "jobs" ? dimsJobs : dimsReq);
     fEl.innerHTML = `<label>Kind</label><select id="br-kind">${kinds.map((k) => `<option value="${k}" ${kind === k ? "selected" : ""}>${k}</option>`).join("")}</select>
       <label>Dimension</label><select id="br-dim">${dims.map(([v, l]) => `<option value="${v}" ${(S.brDim || "frontend") === v ? "selected" : ""}>${l}</option>`).join("")}</select>
       <label>Window</label>${daysSelect("br-days", S.brDays || 14)}
       <button class="btn sm primary" data-apply>Apply</button>`;
-    $("#br-kind", fEl).addEventListener("change", (e) => { S.brKind = e.target.value; renderAnalytics(); });
+    $("#br-kind", fEl).addEventListener("change", (e) => { S.brKind = e.target.value; S.brDim = kind === "jobs" ? "source_type" : "frontend"; renderAnalytics(); });
     bindFilters(fEl, (f) => { S.brKind = f.kind; S.brDim = f.dim; S.brDays = f.days; renderAnalytics(); });
     body.innerHTML = loading();
     api(`/breakdown?kind=${kind}&dim=${S.brDim || "frontend"}&days=${S.brDays || 14}`).then((r) => {
       const rows = r.rows;
+      const headers = r.kind === "auth"
+        ? [{ label: r.dim }, { label: "Total", num: true }, { label: "Success", num: true }, { label: "Failed", num: true }]
+        : r.kind === "jobs"
+          ? [{ label: r.dim }, { label: "Jobs", num: true }, { label: "Completed", num: true }, { label: "Failed", num: true }]
+          : [{ label: r.dim }, { label: "Requests", num: true }, { label: "Errors", num: true }, { label: "Avg ms", num: true }];
+      const rowHtml = rows.map((row) => r.kind === "auth"
+        ? `<tr><td>${esc(row.label || "—")}</td><td class="num">${fmtNum(row.n)}</td><td class="num up">${fmtNum(row.success)}</td><td class="num down">${fmtNum(row.failed)}</td></tr>`
+        : r.kind === "jobs"
+          ? `<tr><td>${esc(trunc(row.label || "—", 60))}</td><td class="num">${fmtNum(row.n)}</td><td class="num up">${fmtNum(row.completed)}</td><td class="num down">${fmtNum(row.failed)}</td></tr>`
+          : `<tr><td>${esc(trunc(row.label, 60))}</td><td class="num">${fmtNum(row.n)}</td><td class="num ${row.errors ? "down" : ""}">${fmtNum(row.errors)}</td><td class="num">${row.avg_ms != null ? Math.round(row.avg_ms) : "—"}</td></tr>`).join("");
       body.innerHTML = `<div class="grid cols-2">
         <div class="panel"><h3>By ${esc(r.dim)} (${esc(r.kind)}) · ${r.days}d</h3><div id="br-bar"></div></div>
         <div class="panel"><h3>Share</h3><div id="br-donut"></div></div>
       </div>
-      <div style="height:16px"></div>` + tableHtml(
-        r.kind === "auth"
-          ? [{ label: r.dim }, { label: "Total", num: true }, { label: "Success", num: true }, { label: "Failed", num: true }]
-          : [{ label: r.dim }, { label: "Requests", num: true }, { label: "Errors", num: true }, { label: "Avg ms", num: true }],
-        rows.map((row) => r.kind === "auth"
-          ? `<tr><td>${esc(row.label || "—")}</td><td class="num">${fmtNum(row.n)}</td><td class="num up">${fmtNum(row.success)}</td><td class="num down">${fmtNum(row.failed)}</td></tr>`
-          : `<tr><td>${esc(trunc(row.label, 60))}</td><td class="num">${fmtNum(row.n)}</td><td class="num ${row.errors ? "down" : ""}">${fmtNum(row.errors)}</td><td class="num">${row.avg_ms != null ? Math.round(row.avg_ms) : "—"}</td></tr>`).join(""),
-      );
+      <div style="height:16px"></div>` + tableHtml(headers, rowHtml);
       hBar($("#br-bar"), rows, { labelFn: (r) => esc(trunc(r.label || "—", 34)) });
       donut($("#br-donut"), rows.slice(0, 8));
     }).catch((e) => { body.innerHTML = `<div class="panel"><div class="error">${esc(e.message)}</div></div>`; });
@@ -764,23 +795,32 @@ function renderJobs(page = 1) {
     <div class="filters">
       <input type="text" data-f="q" placeholder="Search job id / user / title…" value="${esc(f.q || "")}">
       <label>Status</label><select data-f="status"><option value="">Any</option>${["queued", "running", "completed", "failed", "cancelled"].map((s) => `<option ${f.status === s ? "selected" : ""}>${s}</option>`).join("")}</select>
+      <label>Source</label><input type="text" data-f="source_type" placeholder="youtube / url / file…" value="${esc(f.source_type || "")}" style="min-width:110px">
+      <label>AI provider</label><input type="text" data-f="provider" placeholder="gemini / openai…" value="${esc(f.provider || "")}" style="min-width:110px">
       <label>Created within</label>${daysSelect("job-days", f.days || "")}
       <button class="btn sm primary" data-apply>Apply</button>
+      <span class="spacer"></span>
+      <button class="btn sm" id="export-jobs">⬇ CSV</button>
     </div>
     <div id="job-body">${loading()}</div>`;
   bindFilters(el, (nf) => { S.filters.jobs = nf; renderJobs(1); });
+  $("#export-jobs", el).addEventListener("click", () => {
+    download("jobs", f.days);
+  });
 
   api("/jobs" + qs({ ...f, page, per: 25 })).then((r) => {
     if (!r.items.length) { $("#job-body").innerHTML = empty("No jobs yet"); return; }
     $("#job-body").innerHTML = tableHtml(
-      [{ label: "Created" }, { label: "Job" }, { label: "User" }, { label: "Title" }, { label: "Status" }, { label: "Error" }],
+      [{ label: "Created" }, { label: "Job" }, { label: "Created by" }, { label: "Title" }, { label: "Source" }, { label: "AI provider" }, { label: "Status" }, { label: "Error" }],
       r.items.map((row) => `<tr class="click" data-id="${esc(row.job_id)}">
         <td class="mono" style="white-space:nowrap">${fmt(row.created_at)}</td>
         <td class="mono">${esc(trunc(row.job_id, 20))}</td>
-        <td class="mono">${esc(trunc(row.user_id || "", 18))}</td>
-        <td>${esc(trunc(row.video_title || "—", 40))}</td>
+        <td>${userCell(row, "user_id") || "—"}</td>
+        <td>${esc(trunc(row.video_title || "—", 36))}</td>
+        <td>${row.source_type ? `<span class="badge b-gray">${esc(row.source_type)}</span>` : "—"}</td>
+        <td>${row.ai_usage && row.ai_usage.provider ? `<span class="badge b-purple">${esc(row.ai_usage.provider)}</span>` : "—"}</td>
         <td>${statusBadge(row.status)}</td>
-        <td class="faint">${esc(trunc(row.error || "", 40))}</td>
+        <td class="faint">${esc(trunc(row.error || "", 34))}</td>
       </tr>`).join(""),
     ) + pagerHtml(r, (p) => renderJobs(p)).outerHTML;
     $$("[data-id]", $("#job-body")).forEach((tr) => tr.addEventListener("click", () => {
@@ -789,6 +829,61 @@ function renderJobs(page = 1) {
       openModal("Job", kvHtml(row));
     }));
   }).catch((e) => { $("#job-body").innerHTML = `<div class="panel"><div class="error">${esc(e.message)}</div></div>`; });
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PAGE: online (live user activity)
+   ───────────────────────────────────────────────────────────────────────── */
+function renderOnline() {
+  const el = $("#page");
+  const f = S.filters.online || (S.filters.online = { minutes: 15 });
+  el.innerHTML = `
+    <div class="filters">
+      <label>Window</label><select data-f="minutes">${[5, 15, 30, 60].map((m) => `<option value="${m}" ${(f.minutes || 15) == m ? "selected" : ""}>last ${m} min</option>`).join("")}</select>
+      <button class="btn sm primary" data-apply>Refresh</button>
+      <label><input type="checkbox" id="online-tail" ${S.onlineTail ? "checked" : ""}> auto-refresh</label>
+    </div>
+    <div id="online-body">${loading()}</div>`;
+  bindFilters(el, (nf) => { S.filters.online = nf; renderOnline(); }, { minutes: f.minutes || 15 });
+  $("#online-tail", el).addEventListener("change", (e) => {
+    S.onlineTail = e.target.checked;
+    clearInterval(S.timer);
+    if (S.onlineTail && S.page === "online") S.timer = setInterval(() => renderOnline(), 15000);
+  });
+
+  api("/online" + qs({ minutes: f.minutes || 15 })).then((r) => {
+    const cards = [
+      { v: fmtNum(r.now), l: `Active in last 5 min` },
+      { v: fmtNum(r.last_1h), l: "Active in last hour" },
+      { v: fmtNum(r.last_24h), l: "Active in last 24h" },
+      { v: fmtNum(r.users.length), l: `Users in window (${r.minutes}m)` },
+    ];
+    const bodyHtml = r.users.length
+      ? tableHtml(
+          [{ label: "User" }, { label: "Requests" }, { label: "Errors" }, { label: "Last activity" }, { label: "Last action" }, { label: "Client" }, { label: "Last event" }],
+          r.users.map((u) => `<tr class="click" data-id="${esc(u.id)}">
+            <td>${userCell(u, "id")}</td>
+            <td class="num">${fmtNum(u.requests)}</td>
+            <td class="num ${u.errors ? "down" : ""}">${fmtNum(u.errors)}</td>
+            <td class="mono" style="white-space:nowrap">${fmt(u.last_seen)}</td>
+            <td class="mono">${esc(u.last_method || "")} <span class="faint">${esc(trunc(u.last_path || "", 36))}</span></td>
+            <td>${deviceIcon(null, null, u.last_device)} <span class="faint">${esc(trunc(u.last_frontend || u.last_device || "", 24))}</span>${u.last_ip ? `<div class="faint mono">${esc(u.last_ip)}</div>` : ""}</td>
+            <td>${u.last_event ? `<span class="badge b-blue">${esc(u.last_event)}</span>` : "—"}</td>
+          </tr>`).join(""),
+        )
+      : empty(`No users active in the last ${r.minutes} minutes`);
+    $("#online-body").innerHTML = `
+      <div class="grid cols-4">
+        ${cards.map((c) => `<div class="panel kpi"><div class="v">${esc(c.v)}</div><div class="l">${esc(c.l)}</div></div>`).join("")}
+      </div>
+      <div style="height:16px"></div>
+      <div id="online-list">${bodyHtml}</div>`;
+    $$("[data-id]", $("#online-list")).forEach((tr) => tr.addEventListener("click", () => {
+      const u = r.users.find((x) => String(x.id) === String(tr.dataset.id));
+      if (!u) return;
+      openModal("User · " + esc(userName(u) || u.id), kvHtml(u));
+    }));
+  }).catch((e) => { $("#online-body").innerHTML = `<div class="panel"><div class="error">${esc(e.message)}</div></div>`; });
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -1009,8 +1104,8 @@ function render() {
 
   const R = {
     overview: renderOverview, analytics: renderAnalytics, sessions: renderSessions,
-    requests: renderRequests, users: renderUsers, jobs: renderJobs, events: renderEvents,
-    backends: renderBackends, logs: renderLogs, admins: renderAdmins,
+    requests: renderRequests,     users: renderUsers, jobs: renderJobs, events: renderEvents,
+    backends: renderBackends, logs: renderLogs, admins: renderAdmins, online: renderOnline,
   };
   R[S.page](1);
   scheduleTail();

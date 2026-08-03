@@ -152,6 +152,19 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .b-purple { background: rgba(167,139,250,.14); color: var(--purple); }
 .b-gray { background: rgba(139,152,172,.16); color: var(--muted); }
 
+/* ---------- user cells ---------- */
+.uavatar {
+  width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
+  display: inline-block; vertical-align: middle; margin-right: 8px;
+}
+.uavatar-fallback {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%; vertical-align: middle; margin-right: 8px;
+  background: rgba(59,130,246,.18); color: var(--accent2); font-size: 12px; font-weight: 700;
+}
+.uname { display: inline-flex; flex-direction: column; line-height: 1.35; vertical-align: middle; }
+.uname .faint { font-size: 11px; }
+
 /* ---------- filters ---------- */
 .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
 .filters input, .filters select {
