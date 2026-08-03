@@ -1,18 +1,23 @@
 name: Mirror upstream main to this fork
 
-# Keeps FiscalMindset/Clipo (the fork) in sync with SACHINN122/Clipo (upstream).
-# The Render static site clipo-6bfs.onrender.com auto-deploys from the fork, so
-# every upstream push reaches production within the poll interval.
+# Keeps FiscalMindset/Clipo (the fork) in sync with SACHINN122/Clipo (upstream)
+# and deploys it to Render. The Render static site clipo-6bfs.onrender.com is
+# built from the fork, so every upstream push reaches production.
 #
-# Runs only on the fork itself: upstream pushes trigger a scheduled poll which
-# fast-forwards the fork's main using the fork's own Actions token (no secrets).
-# On the upstream repo the job is skipped via the repository guard.
+# Runs only on the fork itself (guard on github.repository). The upstream
+# repo's "Sync main to fork" workflow fast-forwards the fork's main on every
+# push; that push triggers this workflow, which mirrors any remaining commits
+# and triggers a Render deploy. A 10-minute scheduled poll acts as a safety
+# net, and workflow_dispatch allows manual runs. On the upstream repo the job
+# is skipped via the repository guard.
 #
-# When a RENDER_API_KEY secret is present, the workflow also triggers a Render
-# deploy after syncing, so production updates deterministically via the Render
-# API (what the Render CLI calls) instead of depending on the GitHub webhook.
+# The Render deploy goes through the Render API (what the Render CLI calls)
+# using a RENDER_API_KEY secret on the fork, so deploys are deterministic and
+# do not depend on GitHub's push webhook reaching Render.
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch:
