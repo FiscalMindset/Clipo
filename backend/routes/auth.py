@@ -3,6 +3,7 @@ Auth Routes — Google OAuth 2.0 login/logout/session.
 """
 
 import json
+import logging
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, quote
@@ -23,8 +24,10 @@ from config import (
     JWT_EXPIRE_HOURS,
     SESSION_COOKIE_SECRET,
 )
+from services.supabase_service import sync_user_to_supabase
 
 router = APIRouter(prefix="/auth")
+logger = logging.getLogger(__name__)
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -176,6 +179,7 @@ async def google_callback(code: str = None, error: str = None, state: str = None
     email = info.get("email", "")
     name = info.get("name", "")
     picture = info.get("picture", "")
+    now = datetime.now(timezone.utc)
 
     # Upsert user with persistence
     users = _load_users()
@@ -187,11 +191,18 @@ async def google_callback(code: str = None, error: str = None, state: str = None
         "display_name": existing.get("display_name", ""),
         "bio": existing.get("bio", ""),
         "picture": picture,
-        "created_at": existing.get("created_at", datetime.now(timezone.utc)),
-        "last_login": datetime.now(timezone.utc),
+        "created_at": existing.get("created_at", now),
+        "last_login": now,
     }
     users[google_id] = user
     _save_users(users)
+
+    try:
+        synced = await sync_user_to_supabase(user)
+        if not synced:
+            logger.warning("Supabase sync skipped or failed for user %s", google_id)
+    except Exception as exc:  # noqa: BLE001 - login should still succeed locally
+        logger.warning("Supabase sync failed for user %s: %s", google_id, exc)
 
     # Create JWT session
     token = _create_jwt(google_id, email, name, picture)
