@@ -1,0 +1,36 @@
+name: Sync main to fork
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-fork
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      HAS_FORK_TOKEN: ${{ secrets.FORK_PUSH_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      # Mirror origin main onto FiscalMindset/Clipo (the fork) so the Render
+      # static site clipo-6bfs.onrender.com, which auto-deploys from the fork,
+      # always stays current. Force push is deliberate: the fork is a pure
+      # mirror of origin main.
+      - name: Push main to FiscalMindset/Clipo
+        if: env.HAS_FORK_TOKEN == 'true'
+        env:
+          FORK_TOKEN: ${{ secrets.FORK_PUSH_TOKEN }}
+        run: |
+          git remote add fork "https://x-access-token:${FORK_TOKEN}@github.com/FiscalMindset/Clipo.git"
+          git push -f fork main:main
