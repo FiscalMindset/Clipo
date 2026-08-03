@@ -82,6 +82,13 @@ MAX_CLIP_DURATION = 120  # seconds
 TARGET_CLIP_MIN = 5
 TARGET_CLIP_MAX = 20
 
+# --- Supabase Sync ---
+# The backend mirrors newly authenticated users into Supabase so the project
+# can show real login activity there without changing the existing auth flow.
+SUPABASE_URL = os.getenv("SUPABASE_URL", os.getenv("VITE_SUPABASE_URL", ""))
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", os.getenv("VITE_SUPABASE_PUBLISHABLE_KEY", ""))
+SUPABASE_USERS_TABLE = os.getenv("SUPABASE_USERS_TABLE", "clipo_users")
+
 # --- Caption Constraints ---
 MAX_CAPTION_WORDS = 10   # max words shown on screen at once (sliding window)
 
