@@ -13,6 +13,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      HAS_FISCAL_TOKEN: ${{ secrets.GHCR_FISCALMINDSET_TOKEN != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,7 +52,7 @@ jobs:
       # another org, so this only runs when a FiscalMindset PAT with
       # write:packages is present as the GHCR_FISCALMINDSET_TOKEN secret.
       - name: Log in to GHCR as FiscalMindset
-        if: secrets.GHCR_FISCALMINDSET_TOKEN != ''
+        if: env.HAS_FISCAL_TOKEN == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -58,7 +60,7 @@ jobs:
           password: ${{ secrets.GHCR_FISCALMINDSET_TOKEN }}
 
       - name: Publish Azure image (ghcr.io/fiscalmindset/clipo-api)
-        if: secrets.GHCR_FISCALMINDSET_TOKEN != ''
+        if: env.HAS_FISCAL_TOKEN == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./backend
