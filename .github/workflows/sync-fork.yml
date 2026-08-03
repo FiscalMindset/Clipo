@@ -38,5 +38,11 @@ jobs:
         env:
           FORK_TOKEN: ${{ secrets.FORK_PUSH_TOKEN }}
         run: |
+          case "${FORK_TOKEN:0:10}" in
+            ghs_*)        echo "TOKEN_KIND=GITHUB_TOKEN (WRONG: this is the Actions bot token, cannot push to the fork)" ;;
+            ghp_*)        echo "TOKEN_KIND=classicPAT (ok)" ;;
+            github_pat*)  echo "TOKEN_KIND=fine-grainedPAT (ok)" ;;
+            *)            echo "TOKEN_KIND=unknown-prefix ${FORK_TOKEN:0:4}..." ;;
+          esac
           git remote add fork "https://x-access-token:${FORK_TOKEN}@github.com/FiscalMindset/Clipo.git"
-          git -c http.https://github.com/.extraheader= push -f fork main:main
+          git push -f fork main:main
