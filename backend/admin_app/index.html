@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Clipo Admin</title>
+<link rel="stylesheet" href="/admin/app/admin.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0f17'/%3E%3Ctext x='16' y='22' font-size='15' font-family='sans-serif' font-weight='700' fill='%233b82f6' text-anchor='middle'%3E%C2%BB%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div id="login-view" class="login-wrap">
+  <form class="login-card" id="login-form">
+    <div class="login-logo">Clipo<span>Admin</span></div>
+    <label>GitHub username</label>
+    <input id="user" autocomplete="username" required>
+    <label>Password</label>
+    <input id="pass" type="password" autocomplete="current-password" required>
+    <button class="btn primary block" type="submit">Sign in</button>
+    <div class="error" id="login-err"></div>
+  </form>
+</div>
+
+<div id="app-view" class="hidden">
+  <aside class="sidebar">
+    <div class="brand">Clipo<span>Admin</span></div>
+    <nav id="nav">
+      <button data-page="overview" class="nav-item active">▦ Overview</button>
+      <button data-page="analytics" class="nav-item">◔ Analytics</button>
+      <button data-page="sessions" class="nav-item">⟳ Sign-ins</button>
+      <button data-page="requests" class="nav-item">⌁ Requests</button>
+      <button data-page="users" class="nav-item">👤 Users</button>
+      <button data-page="jobs" class="nav-item">◫ Jobs</button>
+      <button data-page="events" class="nav-item">☰ Events</button>
+      <button data-page="backends" class="nav-item">⬡ Backends</button>
+      <button data-page="logs" class="nav-item">≡ Server logs</button>
+      <button data-page="admins" class="nav-item">⚙ Admins</button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="who" id="whoami"></div>
+      <button class="btn ghost sm block" id="logout-btn">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="content">
+    <header class="topbar">
+      <div>
+        <h1 id="page-title">Overview</h1>
+        <div class="sub" id="page-sub"></div>
+      </div>
+      <div class="topbar-actions">
+        <span class="who mono" id="server-info"></span>
+        <button class="btn ghost sm" id="refresh-btn">⟳ Refresh</button>
+      </div>
+    </header>
+    <div id="page" class="page"></div>
+  </main>
+</div>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-backdrop" id="modal-backdrop"></div>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="modal-title"></h3>
+      <button class="btn ghost sm" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script src="/admin/app/admin.js"></script>
+</body>
+</html>
