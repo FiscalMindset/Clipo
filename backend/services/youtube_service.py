@@ -46,9 +46,14 @@ def _yt_dlp_strategies() -> list[list[str]]:
     which makes a plain download fail. We work around it by trying, in order:
       1. A cookies.txt file if configured (most reliable — full auth).
       2. Browser cookies from a logged-in session (zero config).
-      3. TV client — the most reliable automated bypass without cookies.
-      4. TV + web_safari + ios — broader client fallback.
-      5. Default client — fast path when there's no bot wall.
+      3. TV / android_vr / mweb / web_embedded clients — these run through
+         YouTube's TV, Android VR and mobile-web players, which are not
+         gated by the bot check the way the desktop web player is. Most
+         cookie-less bypasses in current yt-dlp go through these.
+      4. TV + android_vr + web_embedded + mweb in one pass (yt-dlp walks
+         the list until one client yields usable formats).
+      5. TV + web_safari + ios — broader legacy client fallback.
+      6. Default client — fast path when there's no bot wall.
     The first strategy that succeeds wins; if all fail we surface the last error.
 
     Every strategy also enables ``--remote-components ejs:github``. Recent
@@ -67,15 +72,34 @@ def _yt_dlp_strategies() -> list[list[str]]:
         [*base, "--cookies-from-browser", "edge"],
         [*base, "--cookies-from-browser", "brave"],
         [*base, "--extractor-args", "youtube:player_client=tv"],
+        [*base, "--extractor-args", "youtube:player_client=android_vr"],
+        [*base, "--extractor-args", "youtube:player_client=mweb"],
+        [*base, "--extractor-args", "youtube:player_client=web_embedded"],
+        [*base, "--extractor-args", "youtube:player_client=tv,android_vr,web_embedded,mweb"],
         [*base, "--extractor-args", "youtube:player_client=tv,web_safari,ios"],
     ])
     if YOUTUBE_COOKIES_FILE:
         strategies.append(
-            [*base, "--extractor-args", "youtube:player_client=tv,web_safari,ios",
+            [*base, "--extractor-args", "youtube:player_client=tv,android_vr,web_embedded,mweb",
              "--cookies", YOUTUBE_COOKIES_FILE]
         )
     strategies.append([*base])
     return strategies
+
+
+def _bot_wall_hint(last_err: str) -> str:
+    """Append an actionable hint when yt-dlp hit YouTube's bot verification."""
+    if not last_err or ("Sign in" not in last_err and "not a bot" not in last_err):
+        return last_err
+    return (
+        f"{last_err}\n\n"
+        "YouTube is asking for verification because this request looks "
+        "automated. Fix it permanently by exporting cookies from a "
+        "logged-in browser (use the \"Get cookies.txt LOCALLY\" extension), "
+        "then base64-encode the cookies.txt content into the "
+        "YOUTUBE_COOKIES_B64 secret on Azure (or set YOUTUBE_COOKIES_FILE "
+        "in backend/.env). Fresh cookies unblock downloads immediately."
+    )
 
 
 def _yt_dlp_command(*args: str) -> list[str]:
@@ -103,7 +127,7 @@ def _get_video_info_sync(url: str) -> dict:
             last_err = result.stderr.strip()
         except Exception as exc:  # noqa: BLE001 - fall through to next strategy
             last_err = str(exc)
-    raise RuntimeError(f"Failed to fetch video info: {last_err}")
+    raise RuntimeError(f"Failed to fetch video info: {_bot_wall_hint(last_err)}")
 
 
 def _download_video_sync(url: str, output_path: str) -> None:
@@ -130,14 +154,7 @@ def _download_video_sync(url: str, output_path: str) -> None:
             last_err = result.stderr.strip()
         except Exception as exc:  # noqa: BLE001 - fall through to next strategy
             last_err = str(exc)
-    raise RuntimeError(
-        f"Failed to download video: {last_err}\n\n"
-        "YouTube is blocking automated downloads. Fix this permanently by "
-        "exporting a cookies.txt file from your logged-in browser "
-        "(e.g. the 'Get cookies.txt LOCALLY' extension) and setting "
-        "YOUTUBE_COOKIES_FILE in backend/.env (or YOUTUBE_COOKIES_B64 "
-        "on Azure)."
-    )
+    raise RuntimeError(f"Failed to download video: {_bot_wall_hint(last_err)}")
 
 
 async def get_video_info(url: str) -> dict:

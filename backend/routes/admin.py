@@ -149,7 +149,22 @@ async def api_breakdown(request: Request):
     dim = request.query_params.get("dim", "frontend")
     days = _int_qp(request, "days", 14)
     kind = request.query_params.get("kind", "auth")
-    return {"dim": dim, "days": days, "kind": kind, "rows": db.get_breakdown(dim, days, kind)}
+    if kind == "jobs":
+        rows = db.get_jobs_breakdown(dim, days)
+    else:
+        rows = db.get_breakdown(dim, days, kind)
+    return {"dim": dim, "days": days, "kind": kind, "rows": rows}
+
+
+@router.get("/api/online")
+async def api_online(request: Request):
+    _require_admin(request)
+    minutes = _int_qp(request, "minutes", 15)
+    return {
+        "minutes": minutes,
+        **db.get_online_counts(),
+        "users": db.get_online_users(minutes),
+    }
 
 
 @router.get("/api/latency")
@@ -200,7 +215,7 @@ async def api_users(request: Request):
 @router.get("/api/jobs")
 async def api_jobs(request: Request):
     _require_admin(request)
-    f = _filters(request, ["q", "status", "source_type", "days"])
+    f = _filters(request, ["q", "status", "source_type", "user_id", "provider", "days"])
     return db.list_jobs_paginated(f, _int_qp(request, "page", 1), _int_qp(request, "per", 25))
 
 
@@ -302,6 +317,11 @@ _EXPORTS = {
     "events": (
         "export_events",
         ["id", "created_at", "user_id", "event_name", "properties"],
+    ),
+    "jobs": (
+        "export_jobs",
+        ["job_id", "user_id", "user_email", "user_name", "source_type", "status",
+         "video_title", "error", "ai_usage", "created_at", "updated_at"],
     ),
 }
 

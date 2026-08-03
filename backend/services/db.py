@@ -491,8 +491,12 @@ def list_users(limit: int = 25) -> list[dict]:
 
 def list_jobs(limit: int = 25) -> list[dict]:
     return _fetchall(
-        "SELECT job_id, user_id, source_type, status, video_title, error, created_at, updated_at "
-        "FROM jobs ORDER BY created_at DESC LIMIT %s", (limit,)
+        "SELECT j.job_id, j.user_id, j.source_type, j.status, j.video_title, j.error, "
+        "j.ai_usage, j.created_at, j.updated_at, "
+        "u.email AS user_email, COALESCE(u.name, u.display_name, '') AS user_name, "
+        "COALESCE(u.picture, '') AS user_picture "
+        "FROM jobs j LEFT JOIN users u ON u.id = j.user_id "
+        "ORDER BY j.created_at DESC LIMIT %s", (limit,)
     )
 
 
@@ -525,11 +529,11 @@ def _interval_cond(days: int | None) -> tuple[str, list]:
     return "", []
 
 
-def _paginate(sql_base: str, where: str, params: list, order: str, page: int, per: int) -> dict:
+def _paginate(sql_base: str, where: str, params: list, order: str, page: int, per: int, select_cols: str = "*") -> dict:
     page, per = _page_params(page, per)
     total = _scalar(f"SELECT count(*) AS n FROM {sql_base} {where}", params)
     rows = _fetchall(
-        f"SELECT * FROM {sql_base} {where} {order} LIMIT %s OFFSET %s",
+        f"SELECT {select_cols} FROM {sql_base} {where} {order} LIMIT %s OFFSET %s",
         params + [per, (page - 1) * per],
     )
     pages = math.ceil(total / per) if total else 0
@@ -577,6 +581,7 @@ def get_summary(days: int = 14) -> dict:
         "SELECT count(DISTINCT user_id) AS n FROM events WHERE created_at >= now() - interval '7 days'"
     )
     backends_online = _scalar("SELECT count(*) AS n FROM backends WHERE status = 'online'")
+    online_counts = get_online_counts()
 
     top_endpoints = _fetchall(
         "SELECT method, path, count(*) AS n, round(avg(duration_ms)) AS avg_ms, max(duration_ms) AS max_ms, "
@@ -599,6 +604,11 @@ def get_summary(days: int = 14) -> dict:
         "p95_latency_ms": int(latency["p95_ms"]) if latency and latency["p95_ms"] else 0,
         "active_users_7d": active_users_7d,
         "backends_online": backends_online,
+        "users_online_now": online_counts["now"],
+        "users_active_1h": online_counts["last_1h"],
+        "users_active_24h": online_counts["last_24h"],
+        "top_users": get_top_users(days, 10),
+        "job_source_mix": get_jobs_breakdown("source_type", days),
         "signups_series": _fill_daily(signups_series, days),
         "logins_series": _fill_daily(logins_series, days),
         "requests_series": _fill_daily(requests_series, days),
@@ -671,6 +681,105 @@ def get_breakdown(dimension: str, days: int = 14, kind: str = "auth") -> list[di
         "count(*) FILTER (WHERE status = 'failed') AS failed "
         f"FROM auth_events WHERE created_at >= now() - interval '{days} days' "
         f"GROUP BY {col} ORDER BY n DESC LIMIT 20"
+    )
+
+
+_JOBS_BREAKDOWN_DIMS = {"source_type", "status", "user", "provider"}
+
+
+def get_jobs_breakdown(dimension: str, days: int = 14) -> list[dict]:
+    """Group jobs by a dimension (source_type / status / user / AI provider)."""
+    if not _enabled():
+        return []
+    days = max(1, min(180, int(days or 14)))
+    if dimension == "user":
+        return _fetchall(
+            "SELECT COALESCE(u.email, j.user_id, 'unknown') AS label, count(*) AS n, "
+            "count(*) FILTER (WHERE j.status = 'completed') AS completed, "
+            "count(*) FILTER (WHERE j.status = 'failed') AS failed "
+            f"FROM jobs j LEFT JOIN users u ON u.id = j.user_id "
+            f"WHERE j.created_at >= now() - interval '{days} days' "
+            "GROUP BY 1 ORDER BY n DESC LIMIT 20"
+        )
+    dim = dimension if dimension in _JOBS_BREAKDOWN_DIMS else "source_type"
+    col = "COALESCE(j.ai_usage->>'provider', 'none')" if dim == "provider" else dim
+    return _fetchall(
+        f"SELECT {col} AS label, count(*) AS n, "
+        "count(*) FILTER (WHERE j.status = 'completed') AS completed, "
+        "count(*) FILTER (WHERE j.status = 'failed') AS failed "
+        f"FROM jobs j WHERE j.created_at >= now() - interval '{days} days' "
+        "GROUP BY 1 ORDER BY n DESC LIMIT 20"
+    )
+
+
+def get_online_counts() -> dict:
+    """Distinct active users over the last 5 minutes / 1 hour / 24 hours."""
+    if not _enabled():
+        return {"now": 0, "last_1h": 0, "last_24h": 0}
+
+    def cnt(minutes: int) -> int:
+        return _scalar(
+            "SELECT count(DISTINCT user_id) AS n FROM request_logs "
+            "WHERE user_id IS NOT NULL AND created_at >= now() - interval '%s minutes'" % int(minutes)
+        )
+
+    return {"now": cnt(5), "last_1h": cnt(60), "last_24h": cnt(1440)}
+
+
+def get_online_users(minutes: int = 15) -> list[dict]:
+    """Users with activity in the last N minutes + what they were doing last."""
+    if not _enabled():
+        return []
+    minutes = max(1, min(1440, int(minutes or 15)))
+    return _fetchall(
+        "SELECT r.user_id AS id, "
+        "COALESCE(u.email, '') AS email, COALESCE(u.name, '') AS name, "
+        "COALESCE(u.display_name, '') AS display_name, COALESCE(u.picture, '') AS picture, "
+        "u.last_login AS last_login, "
+        "count(*) AS requests, count(*) FILTER (WHERE r.status >= 400) AS errors, "
+        "max(r.created_at) AS last_seen, "
+        "(SELECT r2.method FROM request_logs r2 "
+        " WHERE r2.user_id = r.user_id AND r2.created_at >= now() - interval '%s minutes' "
+        " ORDER BY r2.created_at DESC LIMIT 1) AS last_method, "
+        "(SELECT r2.path FROM request_logs r2 "
+        " WHERE r2.user_id = r.user_id AND r2.created_at >= now() - interval '%s minutes' "
+        " ORDER BY r2.created_at DESC LIMIT 1) AS last_path, "
+        "(SELECT r2.frontend FROM request_logs r2 "
+        " WHERE r2.user_id = r.user_id AND r2.created_at >= now() - interval '%s minutes' "
+        " ORDER BY r2.created_at DESC LIMIT 1) AS last_frontend, "
+        "(SELECT r2.ip FROM request_logs r2 "
+        " WHERE r2.user_id = r.user_id AND r2.created_at >= now() - interval '%s minutes' "
+        " ORDER BY r2.created_at DESC LIMIT 1) AS last_ip, "
+        "(SELECT r2.device FROM request_logs r2 "
+        " WHERE r2.user_id = r.user_id AND r2.created_at >= now() - interval '%s minutes' "
+        " ORDER BY r2.created_at DESC LIMIT 1) AS last_device, "
+        "(SELECT e.event_name FROM events e "
+        " WHERE e.user_id = r.user_id AND e.created_at >= now() - interval '%s minutes' "
+        " ORDER BY e.created_at DESC LIMIT 1) AS last_event "
+        "FROM request_logs r LEFT JOIN users u ON u.id = r.user_id "
+        "WHERE r.user_id IS NOT NULL AND r.created_at >= now() - interval '%s minutes' "
+        "GROUP BY r.user_id, u.email, u.name, u.display_name, u.picture, u.last_login "
+        "ORDER BY last_seen DESC"
+        % (minutes, minutes, minutes, minutes, minutes, minutes, minutes)
+    )
+
+
+def get_top_users(days: int = 14, limit: int = 10) -> list[dict]:
+    """Most active users by request volume in the last N days."""
+    if not _enabled():
+        return []
+    days = max(1, min(180, int(days or 14)))
+    return _fetchall(
+        "SELECT r.user_id AS id, COALESCE(u.email, '') AS email, "
+        "COALESCE(u.name, '') AS name, COALESCE(u.picture, '') AS picture, "
+        "count(*) AS requests, count(*) FILTER (WHERE r.status >= 400) AS errors, "
+        "max(r.created_at) AS last_seen, "
+        "(SELECT count(*) FROM jobs j WHERE j.user_id = r.user_id) AS total_jobs "
+        f"FROM request_logs r LEFT JOIN users u ON u.id = r.user_id "
+        f"WHERE r.user_id IS NOT NULL AND r.created_at >= now() - interval '{days} days' "
+        "GROUP BY r.user_id, u.email, u.name, u.picture "
+        "ORDER BY requests DESC LIMIT %s",
+        (int(limit),),
     )
 
 
@@ -850,16 +959,27 @@ def list_jobs_paginated(filters: dict | None = None, page: int = 1, per: int = 2
     params: list = []
     if filters.get("q"):
         like = f"%{filters['q']}%"
-        conds.append("(job_id ILIKE %s OR user_id ILIKE %s OR video_title ILIKE %s)")
-        params += [like, like, like]
+        conds.append("(j.job_id ILIKE %s OR j.user_id ILIKE %s OR j.video_title ILIKE %s "
+                     "OR u.email ILIKE %s OR u.name ILIKE %s)")
+        params += [like, like, like, like, like]
     for key in ("status", "source_type", "user_id"):
         if filters.get(key):
-            conds.append(f"{key} = %s")
+            conds.append(f"j.{key} = %s")
             params.append(filters[key])
+    if filters.get("provider"):
+        conds.append("COALESCE(j.ai_usage->>'provider', '') = %s")
+        params.append(filters["provider"])
     if filters.get("days"):
-        conds.append("created_at >= now() - interval '%s days'" % int(filters["days"]))
+        conds.append("j.created_at >= now() - interval '%s days'" % int(filters["days"]))
     where = _where(conds)
-    return _paginate("jobs", where, params, "ORDER BY created_at DESC", page, per)
+    base = "jobs j LEFT JOIN users u ON u.id = j.user_id"
+    cols = (
+        "j.job_id, j.user_id, j.source_type, j.status, j.video_title, j.error, "
+        "j.ai_usage, j.created_at, j.updated_at, "
+        "u.email AS user_email, COALESCE(u.name, u.display_name, '') AS user_name, "
+        "COALESCE(u.picture, '') AS user_picture"
+    )
+    return _paginate(base, where, params, "ORDER BY j.created_at DESC", page, per, select_cols=cols)
 
 
 def list_events_paginated(filters: dict | None = None, page: int = 1, per: int = 50) -> dict:
@@ -985,6 +1105,18 @@ def export_events(days: int | None = None) -> list[dict]:
         where = f" WHERE created_at >= now() - interval '{int(days)} days'"
     return _fetchall(
         f"SELECT id, created_at, user_id, event_name, properties FROM events{where} ORDER BY created_at DESC"
+    )
+
+
+def export_jobs(days: int | None = None) -> list[dict]:
+    where = ""
+    if days:
+        where = f" WHERE j.created_at >= now() - interval '{int(days)} days'"
+    return _fetchall(
+        f"SELECT j.job_id, j.user_id, j.source_type, j.status, j.video_title, j.error, "
+        f"j.ai_usage, j.created_at, j.updated_at, "
+        f"u.email AS user_email, COALESCE(u.name, u.display_name, '') AS user_name "
+        f"FROM jobs j LEFT JOIN users u ON u.id = j.user_id{where} ORDER BY j.created_at DESC"
     )
 
 
