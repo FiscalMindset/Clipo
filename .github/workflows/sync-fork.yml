@@ -47,3 +47,13 @@ jobs:
           git remote add fork "https://x-access-token:${FORK_TOKEN}@github.com/FiscalMindset/Clipo.git"
           git push fork main:main 2>/dev/null && echo "pushed (fast-forward)" \
             || { echo "fast-forward rejected; forcing mirror update"; git push -f fork main:main; }
+
+      # After mirroring, dispatch the fork's fork-sync.yml so it runs
+      # immediately (instead of waiting up to 10 minutes for the schedule) and
+      # triggers the Render deploy via the fork's own RENDER_API_KEY secret.
+      - name: Dispatch fork sync to trigger Render deploy
+        if: env.HAS_FORK_TOKEN == 'true'
+        env:
+          FORK_TOKEN: ${{ secrets.FORK_PUSH_TOKEN }}
+        run: |
+          GH_TOKEN="$FORK_TOKEN" gh workflow run fork-sync.yml --repo FiscalMindset/Clipo --ref main

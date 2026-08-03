@@ -7,6 +7,10 @@ name: Mirror upstream main to this fork
 # Runs only on the fork itself: upstream pushes trigger a scheduled poll which
 # fast-forwards the fork's main using the fork's own Actions token (no secrets).
 # On the upstream repo the job is skipped via the repository guard.
+#
+# When a RENDER_API_KEY secret is present, the workflow also triggers a Render
+# deploy after syncing, so production updates deterministically via the Render
+# API (what the Render CLI calls) instead of depending on the GitHub webhook.
 
 on:
   schedule:
@@ -24,6 +28,8 @@ jobs:
   mirror:
     if: github.repository == 'FiscalMindset/Clipo'
     runs-on: ubuntu-latest
+    env:
+      HAS_RENDER_KEY: ${{ secrets.RENDER_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,4 +48,25 @@ jobs:
           else
             echo "new upstream commits found; updating fork main"
             git push origin upstream/main:main
+          fi
+
+      - name: Trigger Render deploy when live commit is behind upstream
+        if: env.HAS_RENDER_KEY == 'true'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          SERVICE_ID="srv-d9m252jm8hqs739ndnb0"
+          UPSTREAM=$(git rev-parse upstream/main)
+          LIVE=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploys?limit=1&status=live" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0]['deploy']['commit']['id']) if d else print('')")
+          if [ "$LIVE" = "$UPSTREAM" ]; then
+            echo "already live on ${UPSTREAM}; skipping deploy"
+          else
+            echo "deploying ${UPSTREAM} (live was ${LIVE:-none})"
+            curl -s -X POST \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d '{"clearCache":"do_not_clear"}' \
+              "https://api.render.com/v1/services/${SERVICE_ID}/deploys"
           fi
