@@ -47,16 +47,20 @@ def fetch_counts():
 
 def build_section(counts):
     ordered = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
-    total = sum(counts.values())
+    known = [(login, n) for login, n in ordered if login in META]
+    for login, _ in ordered:
+        if login not in META:
+            print(f"warning: skipping unknown contributor {login}", file=sys.stderr)
+    total = sum(n for _, n in known)
 
     pie_lines = ["```mermaid", f"pie showData title Commit share ({total} total)"]
-    for login, n in ordered:
+    for login, n in known:
         meta = META[login]
         pie_lines.append(f'    "{meta["name"]}" : {n}')
     pie_lines.append("```")
 
     rows = []
-    for login, n in ordered:
+    for login, n in known:
         meta = META[login]
         rows.append(
             f"| [![{meta['name']}](https://github.com/{login}.png?size=28)]"
