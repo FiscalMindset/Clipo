@@ -30,6 +30,8 @@ from fastapi.staticfiles import StaticFiles
 from config import CLIP_DIR, FRONTEND_URLS, GEMINI_API_KEY
 from routes.api import router as api_router
 from routes.auth import router as auth_router
+from routes.admin import router as admin_router
+from services import db
 from services.transcription_service import load_local_whisper_model
 
 
@@ -63,6 +65,9 @@ async def lifespan(app: FastAPI):
         sys.exit(1)
 
     print(f"ffmpeg found: {shutil.which('ffmpeg')}")
+
+    # Initialize Postgres analytics (no-op when DATABASE_URL is not set).
+    db.init_db()
 
     # Validate required API keys
     if not GEMINI_API_KEY:
@@ -116,6 +121,7 @@ app.mount("/static/clips", StaticFiles(directory=str(CLIP_DIR)), name="clips")
 # Register API routes
 app.include_router(auth_router)
 app.include_router(api_router)
+app.include_router(admin_router)
 
 
 @app.get("/")

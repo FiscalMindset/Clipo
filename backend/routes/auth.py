@@ -193,6 +193,14 @@ async def google_callback(code: str = None, error: str = None, state: str = None
     users[google_id] = user
     _save_users(users)
 
+    # Mirror the user into Postgres analytics (no-op when DB not configured).
+    try:
+        from services import db as _db
+        is_new = _db.upsert_user(user)
+        _db.record_event(google_id, "login", {"email": email, "is_new": is_new})
+    except Exception:
+        pass
+
     # Create JWT session
     token = _create_jwt(google_id, email, name, picture)
 

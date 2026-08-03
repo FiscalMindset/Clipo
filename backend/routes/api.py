@@ -35,6 +35,7 @@ from services.pipeline_service import (
     jobs,
 )
 from services.caption_service import generate_captioned_clip, list_styles
+from services import db
 from routes.auth import get_current_user, require_user
 
 
@@ -149,6 +150,9 @@ async def report_issue(request: Request, job_id: str | None = None, clip_id: int
     except Exception:
         issue_urls = []
 
+    # Record the report into analytics (no-op when DB not configured).
+    db.record_event(user_id, "report_submitted", {"type": report_type, "created_issue": bool(issue_urls)})
+
     # Attempt to send an email to support if SMTP is configured
     try:
         from config import SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_USE_TLS, SUPPORT_EMAIL
@@ -212,6 +216,22 @@ async def health_check():
     }
 
 
+@router.post("/track")
+async def track_event(request: Request, body: dict | None = None):
+    """Record a user behavior event (fire-and-forget, no-op when DB is off)."""
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+    body = body or {}
+    name = str(body.get("event") or body.get("name") or "").strip()
+    if not name or len(name) > 100:
+        raise HTTPException(status_code=400, detail="Event name required")
+    props = body.get("properties") or {}
+    if not isinstance(props, dict):
+        props = {}
+    db.record_event(user_id, name, props)
+    return {"status": "ok"}
+
+
 @router.get("/config")
 async def get_config():
     """Return public config info the frontend needs."""
@@ -256,6 +276,7 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
         video_title=file.filename,
         user_id=user_id,
     )
+    db.record_event(user_id, "job_uploaded", {"job_id": job_id, "filename": file.filename})
 
     return UploadResponse(
         job_id=job_id,
@@ -283,6 +304,7 @@ async def submit_youtube_url(req: Request, request: YouTubeRequest):
         video_title="YouTube Video",
         user_id=user_id,
     )
+    db.record_event(user_id, "job_youtube", {"job_id": job_id, "url": url})
 
     return UploadResponse(
         job_id=job_id,
@@ -314,6 +336,7 @@ async def start_processing(request: Request, job_id: str):
     # Launch pipeline as a background task. The transcription service will
     # use the local model when available and fall back to Gemini otherwise.
     asyncio.create_task(run_pipeline(job_id, whisper_model))
+    db.record_event(user_id, "job_started", {"job_id": job_id})
 
     return {"message": "Processing started", "job_id": job_id}
 

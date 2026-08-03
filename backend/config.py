@@ -55,10 +55,6 @@ WHISPER_COMPUTE_TYPE = _detect_whisper_compute_type(WHISPER_DEVICE)
 
 # --- Gemini Settings ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-# Optional comma-separated list of extra free-tier API keys. When multiple keys
-# are configured, the backend round-robins them and automatically switches away
-# from a key that hits its rate limit. GEMINI_API_KEY is always included first.
-GEMINI_API_KEYS = os.getenv("GEMINI_API_KEYS", "")
 GEMINI_MODEL = "gemini-2.5-flash"
 # Retry temporary Gemini service failures (for example HTTP 503) before
 # failing an otherwise valid processing job. These remain configurable so a
@@ -171,3 +167,25 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 # whose token allows it, so both a fork and the upstream can be targeted.
 GITHUB_REPO = os.getenv("GITHUB_REPO", "SACHINN122/Clipo")
 GITHUB_REPOS = [r.strip() for r in GITHUB_REPO.split(",") if r.strip()] or ["SACHINN122/Clipo"]
+
+# --- PostgreSQL analytics / persistence ---
+# Full connection string wins if provided; otherwise it is assembled from the
+# DB_* vars. Empty DATABASE_URL disables the DB layer (all DB calls become
+# no-ops) so the app still runs locally without Postgres.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    _db_user = os.getenv("DB_USER", "")
+    _db_pass = os.getenv("DB_PASSWORD", "")
+    _db_host = os.getenv("DB_HOST", "")
+    _db_name = os.getenv("DB_NAME", "")
+    _db_port = os.getenv("DB_PORT", "5432")
+    if _db_user and _db_pass and _db_host and _db_name:
+        DATABASE_URL = (
+            f"postgresql://{_db_user}:{_db_pass}@{_db_host}:{_db_port}/{_db_name}?sslmode=require"
+        )
+
+# Admin panel credentials (seeded into the DB on first run).
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "FiscalMindset")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Iit7065@")
+# Comma-separated list of admin GitHub usernames allowed to log in.
+ADMIN_USERNAMES = [u.strip() for u in os.getenv("ADMIN_USERNAMES", "FiscalMindset,SACHINN122").split(",") if u.strip()]

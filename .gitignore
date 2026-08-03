@@ -1,5 +1,7 @@
 # Environment
 .env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -36,3 +38,4 @@ users.json
 # OS
 Thumbs.db
 .DS_Store
+.gstack/
