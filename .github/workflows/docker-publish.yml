@@ -44,3 +44,25 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # The Azure Container Apps deployment (clipo-api) pulls from
+      # ghcr.io/fiscalmindset/clipo-api. The repo GITHUB_TOKEN cannot push to
+      # another org, so this only runs when a FiscalMindset PAT with
+      # write:packages is present as the GHCR_FISCALMINDSET_TOKEN secret.
+      - name: Log in to GHCR as FiscalMindset
+        if: secrets.GHCR_FISCALMINDSET_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: FiscalMindset
+          password: ${{ secrets.GHCR_FISCALMINDSET_TOKEN }}
+
+      - name: Publish Azure image (ghcr.io/fiscalmindset/clipo-api)
+        if: secrets.GHCR_FISCALMINDSET_TOKEN != ''
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ghcr.io/fiscalmindset/clipo-api:latest
+          labels: ${{ steps.meta.outputs.labels }}
