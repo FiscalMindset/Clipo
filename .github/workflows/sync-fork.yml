@@ -31,8 +31,8 @@ jobs:
 
       # Mirror origin main onto FiscalMindset/Clipo (the fork) so the Render
       # static site clipo-6bfs.onrender.com, which auto-deploys from the fork,
-      # always stays current. Force push is deliberate: the fork is a pure
-      # mirror of origin main.
+      # always stays current. Prefer a fast-forward push so Render's auto-deploy
+      # webhook fires normally; fall back to force only if the fork diverged.
       - name: Push main to FiscalMindset/Clipo
         if: env.HAS_FORK_TOKEN == 'true'
         env:
@@ -45,4 +45,5 @@ jobs:
             *)            echo "TOKEN_KIND=unknown-prefix ${FORK_TOKEN:0:4}..." ;;
           esac
           git remote add fork "https://x-access-token:${FORK_TOKEN}@github.com/FiscalMindset/Clipo.git"
-          git push -f fork main:main
+          git push fork main:main 2>/dev/null && echo "pushed (fast-forward)" \
+            || { echo "fast-forward rejected; forcing mirror update"; git push -f fork main:main; }
