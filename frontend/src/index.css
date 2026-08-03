@@ -446,7 +446,7 @@
 
 @media(max-width:700px) {
   .results-frame {
-    padding: 48px 18px
+    padding: 12px 18px 48px
   }
 
   .results-header {
@@ -562,7 +562,7 @@
 .results-frame {
   max-width: 1280px;
   margin: auto;
-  padding: 56px 32px 96px;
+  padding: 24px 32px 96px;
   position: relative;
 }
 
@@ -725,6 +725,32 @@
 .feedback-actions {
   display: flex;
   gap: 8px
+}
+
+@media (max-width: 640px) {
+  .feedback-toast {
+    left: 16px;
+    right: 16px;
+    bottom: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .feedback-actions button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 400px) {
+  .feedback-actions {
+    flex-direction: column;
+  }
+
+  .feedback-actions button {
+    width: 100%;
+  }
 }
 
 /* Report modal */
@@ -2556,7 +2582,9 @@ body {
 }
 
 @media (max-width: 850px) {
-  .header-actions {
+  .header-actions .local-badge,
+  .header-actions > a,
+  .header-actions .user-menu {
     display: none
   }
 }
@@ -3048,6 +3076,11 @@ body {
   background: rgba(124, 109, 240, 0.25);
 }
 
+.pipeline-progress-dot.is-done {
+  background: linear-gradient(90deg, #7c6df0, #a78bfa);
+  opacity: 0.5;
+}
+
 .pipeline-progress-dot.is-active::after {
   content: '';
   position: absolute;
@@ -3283,6 +3316,32 @@ body {
   color: #d6d3df;
 }
 
+/* Completed state — steps the demo has already walked through */
+.pipeline-step.is-done .pipeline-step-icon {
+  background: rgba(52, 211, 153, 0.08);
+  border-color: rgba(52, 211, 153, 0.25);
+  color: #34d399;
+}
+
+.pipeline-step.is-done .pipeline-step-num {
+  color: #34d399;
+}
+
+.pipeline-step.is-done .pipeline-step-head strong {
+  color: #a7e8c3;
+}
+
+.pipeline-step-badge.is-running {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.25);
+}
+
+.pipeline-step-badge.is-running .pipeline-step-dot {
+  background: #fbbf24;
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.2);
+}
+
 .pipeline-foot {
   margin-top: 24px;
   padding: 14px 16px;
@@ -3430,44 +3489,148 @@ body {
   border-top: 1px solid rgba(255, 255, 255, .075)
 }
 
+.benefits-head .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px
+}
+
+.eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #c4b5fd, #6d28d9);
+  box-shadow: 0 0 12px rgba(167, 139, 250, .8)
+}
+
+.benefits-head h2 {
+  margin-top: 18px;
+  font-size: clamp(28px, 3.2vw, 44px);
+  line-height: 1.04;
+  letter-spacing: -.05em;
+  font-weight: 700
+}
+
+.benefits-head h2 em {
+  font-style: normal;
+  background: linear-gradient(110deg, #e4dcff, #a78bfa 55%, #7c3aed);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent
+}
+
+.benefits-sub {
+  max-width: 330px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #8f8c9c;
+  margin-top: 16px
+}
+
 .benefit-list {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 34px 22px
+  gap: 16px
 }
 
-.benefit-list>div {
+.benefit-card {
   position: relative;
-  padding-top: 26px
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .015));
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 16px;
+  padding: 20px 20px 18px;
+  overflow: hidden;
+  transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease
 }
 
-.benefit-list>div:before {
+.benefit-card::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 22px;
-  height: 1px;
-  background: #7659a8
+  inset: 0;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(167, 139, 250, .13), transparent 62%);
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none
 }
 
-.benefit-list span {
+.benefit-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(167, 139, 250, .35);
+  box-shadow: 0 18px 42px rgba(76, 29, 149, .24)
+}
+
+.benefit-card:hover::after {
+  opacity: 1
+}
+
+.benefit-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(140deg, rgba(167, 139, 250, .22), rgba(109, 40, 217, .14));
+  border: 1px solid rgba(167, 139, 250, .3);
+  color: #c4b5fd;
+  align-self: flex-start
+}
+
+.benefit-icon svg {
+  width: 16px;
+  height: 16px
+}
+
+.benefit-num {
+  position: absolute;
+  top: 22px;
+  right: 20px;
   font-size: 10px;
-  color: #8269ac
+  font-weight: 700;
+  letter-spacing: .14em;
+  color: #6f6b7c;
+  font-variant-numeric: tabular-nums
 }
 
-.benefit-list h3 {
-  font-size: 13px;
+.benefit-card h3 {
+  font-size: 14px;
   font-weight: 600;
-  margin-top: 11px
+  margin-top: 16px;
+  color: #f4f3fa
 }
 
-.benefit-list p {
-  font-size: 11px;
-  line-height: 1.55;
-  color: #777580;
-  margin-top: 7px;
-  max-width: 160px
+.benefit-card p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8f8c9c;
+  margin-top: 7px
+}
+
+.benefit-card.is-featured {
+  grid-column: span 2;
+  border-color: rgba(167, 139, 250, .3);
+  background: linear-gradient(180deg, rgba(124, 58, 237, .16), rgba(124, 58, 237, .04))
+}
+
+.benefit-card.is-featured::after {
+  opacity: 1;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(167, 139, 250, .22), transparent 62%)
+}
+
+.benefit-card.is-featured .benefit-icon {
+  background: linear-gradient(140deg, #a78bfa, #6d28d9);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(124, 58, 237, .4)
+}
+
+.benefit-card.is-featured h3 {
+  font-size: 15px
+}
+
+.benefit-card.is-featured p {
+  max-width: 300px
 }
 
 /* Job history list (shared by UploadScreen recent jobs + LibraryScreen) */

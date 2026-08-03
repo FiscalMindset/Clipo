@@ -22,6 +22,8 @@ const BENEFITS = [
 ];
 const YOUTUBE_ERROR = 'Please enter a valid YouTube video URL (youtube.com/watch?v=... or youtu.be/...)';
 
+const benefitIconNames = ['cpu', 'shield', 'zap', 'spark', 'export'];
+
 function Icon({ name, className = 'h-5 w-5' }) {
   const paths = {
     upload: <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 16.5v2.25A2.25 2.25 0 0 0 6.25 21h11.5A2.25 2.25 0 0 0 20 18.75V16.5" />,
@@ -38,6 +40,8 @@ function Icon({ name, className = 'h-5 w-5' }) {
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.1 2.1-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56v.1h-3v-.1A1.7 1.7 0 0 0 10.7 18.64a1.7 1.7 0 0 0-1.88.34l-.06.06-2.1-2.1.06-.06A1.7 1.7 0 0 0 7.06 15a1.7 1.7 0 0 0-1.56-1.03h-.1v-3h.1A1.7 1.7 0 0 0 7.06 9.94a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.1-2.1.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.03-1.56v-.1h3v.1a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.1 2.1-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03h.1v3h-.1A1.7 1.7 0 0 0 19.4 15Z" /></>,
     cpu: <><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M15 2v2m-6-2v2m6 16v2m-6-2v2m11-10h2M2 15h2m16-6h2M2 9h2" /></>,
     bell: <><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></>,
+    shield: <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />,
+    zap: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />,
   };
   return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.7">{paths[name]}</svg>;
 }
@@ -82,10 +86,19 @@ export default function UploadScreen({ onProcessingStart, onNavigate, onVisitJob
   const [notify, setNotify] = useState(false);
   const [jobHistory, setJobHistory] = useState(loadJobHistory);
   const [backendConfig, setBackendConfig] = useState(null);
+  const [demoStep, setDemoStep] = useState(0);
   const input = useRef(null);
 
   useEffect(() => {
     getConfig().then((cfg) => { if (cfg) setBackendConfig(cfg); }).catch(() => { });
+  }, []);
+
+  // Looping demo: walk the 5-step workflow so the pipeline panel reads as a
+  // real demo instead of sitting static on the first step.
+  useEffect(() => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
+    const id = setInterval(() => setDemoStep((d) => (d + 1) % PIPELINE.length), 2800);
+    return () => clearInterval(id);
   }, []);
 
   const selectFile = useCallback((nextFile) => {
@@ -197,7 +210,7 @@ export default function UploadScreen({ onProcessingStart, onNavigate, onVisitJob
                 {PIPELINE.map((step, i) => (
                   <span
                     key={step.label}
-                    className={`pipeline-progress-dot ${i === 0 ? 'is-active' : ''}`}
+                    className={`pipeline-progress-dot ${i < demoStep ? 'is-done' : ''} ${i === demoStep ? 'is-active' : ''}`}
                   />
                 ))}
               </div>
@@ -206,7 +219,7 @@ export default function UploadScreen({ onProcessingStart, onNavigate, onVisitJob
               {PIPELINE.map((step, index) => (
                 <li
                   key={step.label}
-                  className={`pipeline-step ${index === 0 ? 'is-current' : ''} tone-${step.tone}`}
+                  className={`pipeline-step ${index < demoStep ? 'is-done' : ''} ${index === demoStep ? 'is-current' : ''} tone-${step.tone}`}
                 >
                   <span className="pipeline-step-rail" aria-hidden="true">
                     <span className="pipeline-step-icon">
@@ -223,10 +236,10 @@ export default function UploadScreen({ onProcessingStart, onNavigate, onVisitJob
                     <p className="pipeline-step-summary">{step.summary}</p>
                     <p className="pipeline-step-detail">{step.detail}</p>
                   </div>
-                  {index === 0 && (
-                    <span className="pipeline-step-badge" aria-label="Ready">
+                  {index === demoStep && (
+                    <span className="pipeline-step-badge is-running" aria-label="Running">
                       <span className="pipeline-step-dot" />
-                      Ready
+                      Running
                     </span>
                   )}
                 </li>
@@ -269,7 +282,23 @@ export default function UploadScreen({ onProcessingStart, onNavigate, onVisitJob
           )}
         </section>
 
-        <section className="benefits"><div><div className="eyebrow">Made for creators</div><h2>Everything between<br />idea and publish.</h2></div><div className="benefit-list">{BENEFITS.map(([number, title, description]) => <div key={number}><span>{number}</span><h3>{title}</h3><p>{description}</p></div>)}</div></section>
+        <section className="benefits">
+          <div className="benefits-head">
+            <div className="eyebrow"><span className="eyebrow-dot" />Made for creators</div>
+            <h2>Everything between<br /><em>idea</em> and publish.</h2>
+            <p className="benefits-sub">The whole edit runs on your hardware — private, fast, and tuned to find the moments worth sharing.</p>
+          </div>
+          <div className="benefit-list">
+            {BENEFITS.map(([number, title, description], i) => (
+              <div className={`benefit-card${i === 3 ? ' is-featured' : ''}`} key={number}>
+                <span className="benefit-icon"><Icon name={benefitIconNames[i]} /></span>
+                <span className="benefit-num">{number}</span>
+                <h3>{title}</h3>
+                <p>{description}</p>
+              </div>
+            ))}
+          </div>
+        </section>
       </main>
     </div>
   </div>;

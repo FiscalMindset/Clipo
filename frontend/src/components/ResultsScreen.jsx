@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getClips, getDownloadAllUrl, getDownloadUrl, getStaticUrl, generateCaptions } from '../lib/api';
 import VideoPlayer from './VideoPlayer';
 import CaptionStudio from './CaptionStudio';
+import StudioHeader from './StudioHeader';
 
 const Icon = ({ type, className }) => {
   const paths = {
@@ -140,7 +141,7 @@ function ClipCard({ clip, jobId, onPlay, onRename, onDelete, onStudio }) {
   );
 }
 
-export default function ResultsScreen({ jobId, onReset }) {
+export default function ResultsScreen({ jobId, onReset, onNavigate }) {
   const [clips, setClips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -268,6 +269,7 @@ export default function ResultsScreen({ jobId, onReset }) {
     <div className="results-shell">
       <div className="results-aura" />
       <div className="results-frame">
+        <StudioHeader activeTab="create" onNavigate={onNavigate} />
         <motion.header
           className="results-header"
           initial={{ opacity: 0, y: 8 }}
