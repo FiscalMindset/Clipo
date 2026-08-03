@@ -55,6 +55,10 @@ WHISPER_COMPUTE_TYPE = _detect_whisper_compute_type(WHISPER_DEVICE)
 
 # --- Gemini Settings ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# Optional comma-separated list of extra free-tier API keys. When multiple keys
+# are configured, the backend round-robins them and automatically switches away
+# from a key that hits its rate limit. GEMINI_API_KEY is always included first.
+GEMINI_API_KEYS = os.getenv("GEMINI_API_KEYS", "")
 GEMINI_MODEL = "gemini-2.5-flash"
 # Retry temporary Gemini service failures (for example HTTP 503) before
 # failing an otherwise valid processing job. These remain configurable so a
