@@ -36,6 +36,7 @@ jobs:
         run: python .github/scripts/update_star_history.py
 
       - name: Commit if changed
+        if: github.repository == 'SACHINN122/Clipo'
         run: |
           git add README.md images/star-history.svg
           if git diff --cached --quiet; then

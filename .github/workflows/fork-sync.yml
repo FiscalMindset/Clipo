@@ -1,0 +1,45 @@
+name: Mirror upstream main to this fork
+
+# Keeps FiscalMindset/Clipo (the fork) in sync with SACHINN122/Clipo (upstream).
+# The Render static site clipo-6bfs.onrender.com auto-deploys from the fork, so
+# every upstream push reaches production within the poll interval.
+#
+# Runs only on the fork itself: upstream pushes trigger a scheduled poll which
+# fast-forwards the fork's main using the fork's own Actions token (no secrets).
+# On the upstream repo the job is skipped via the repository guard.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror-upstream
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    if: github.repository == 'FiscalMindset/Clipo'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch upstream main
+        run: |
+          git remote add upstream https://github.com/SACHINN122/Clipo.git
+          git fetch upstream main
+
+      - name: Fast-forward fork main when upstream has new commits
+        run: |
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "fork main already contains upstream main; nothing to do"
+          else
+            echo "new upstream commits found; updating fork main"
+            git push origin upstream/main:main
+          fi
