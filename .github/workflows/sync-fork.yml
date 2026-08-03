@@ -22,6 +22,12 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+          # Don't inject the GITHUB_TOKEN Authorization header into this
+          # checkout. With persist-credentials: true, actions/checkout sets a
+          # global http.extraheader that shadows the FORK_PUSH_TOKEN URL
+          # credentials on push, which makes GitHub attribute the push to
+          # github-actions[bot] and deny it with a 403.
+          persist-credentials: false
 
       # Mirror origin main onto FiscalMindset/Clipo (the fork) so the Render
       # static site clipo-6bfs.onrender.com, which auto-deploys from the fork,
@@ -33,4 +39,4 @@ jobs:
           FORK_TOKEN: ${{ secrets.FORK_PUSH_TOKEN }}
         run: |
           git remote add fork "https://x-access-token:${FORK_TOKEN}@github.com/FiscalMindset/Clipo.git"
-          git push -f fork main:main
+          git -c http.https://github.com/.extraheader= push -f fork main:main
