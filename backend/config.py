@@ -6,6 +6,7 @@ Reads settings from environment variables / .env file.
 import base64
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -189,3 +190,50 @@ ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "FiscalMindset")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Iit7065@")
 # Comma-separated list of admin GitHub usernames allowed to log in.
 ADMIN_USERNAMES = [u.strip() for u in os.getenv("ADMIN_USERNAMES", "FiscalMindset,SACHINN122").split(",") if u.strip()]
+
+# --- Backend identity & telemetry ---
+# Each deployment must have a stable BACKEND_ID so telemetry can attribute
+# requests/sessions/logs to the right backend. INSTANCE_ID distinguishes
+# individual pods/replicas within the same backend.
+BACKEND_ID = os.getenv("BACKEND_ID", "").strip()
+if not BACKEND_ID:
+    # Auto-derive a stable id from the public backend URL when not set.
+    _auto_id = ""
+    for _candidate in (os.getenv("BACKEND_URL", ""), BACKEND_URL):
+        if _candidate and _candidate.startswith(("http://", "https://")):
+            _auto_id = _candidate.split("//", 1)[1].split("/", 1)[0].replace(":", "-")
+            break
+    BACKEND_ID = _auto_id or "local-dev"
+BACKEND_NAME = os.getenv("BACKEND_NAME", BACKEND_ID)
+BACKEND_VERSION = os.getenv("BACKEND_VERSION", "1.0.0")
+BACKEND_REGION = os.getenv("BACKEND_REGION", "unknown")
+INSTANCE_ID = os.getenv("INSTANCE_ID", "") or uuid.uuid4().hex[:12]
+
+# When enabled, the app buffers request + server-log telemetry and flushes it
+# to Postgres in batches so analytics never blocks the request path.
+TELEMETRY_ENABLED = os.getenv("TELEMETRY_ENABLED", "true").lower() in ("1", "true", "yes")
+TELEMETRY_FLUSH_SECONDS = float(os.getenv("TELEMETRY_FLUSH_SECONDS", "5"))
+TELEMETRY_MAX_BUFFER = int(os.getenv("TELEMETRY_MAX_BUFFER", "500"))
+
+# Friendly display names for known frontends (origin -> name). Used by the
+# admin panel so "which frontend did this sign-in come from" is readable.
+FRONTEND_NAMES = {
+    "https://clipoai.onrender.com": "Render (origin)",
+    "https://clipo-6bfs.onrender.com": "Render (fork)",
+    "https://white-island-047e3ae00.7.azurestaticapps.net": "Azure SWA",
+    "http://localhost:5173": "Local dev",
+    "http://localhost:4173": "Local dev",
+    "http://localhost:5174": "Local dev",
+}
+for _extra in os.getenv("FRONTEND_NAME_MAP", "").split(","):
+    if "=" in _extra:
+        _k, _v = _extra.split("=", 1)
+        FRONTEND_NAMES[_k.strip()] = _v.strip()
+
+
+def frontend_name(origin: str) -> str:
+    """Return a friendly name for a frontend origin (falls back to the URL)."""
+    origin = (origin or "").strip()
+    if not origin:
+        return "unknown"
+    return FRONTEND_NAMES.get(origin, origin)

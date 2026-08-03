@@ -99,6 +99,47 @@ def require_user(request: Request) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Sign-in telemetry (which frontend + which backend + IP + UA)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _auth_context(request: Request, origin: str) -> dict:
+    """Build the context dict recorded with every auth event."""
+    from config import frontend_name
+    from services import telemetry
+
+    ctx = telemetry.client_context(request)
+    # The OAuth `state` origin is authoritative for "which frontend started
+    # this sign-in" (the Origin/Referer header is Google's on the callback).
+    ctx["frontend_origin"] = origin
+    ctx["frontend"] = frontend_name(origin)
+    ctx["backend_id"] = telemetry.BACKEND["backend_id"]
+    ctx["backend_name"] = telemetry.BACKEND["name"]
+    ctx["instance_id"] = telemetry.BACKEND["instance_id"]
+    return ctx
+
+
+def record_auth(
+    request: Request,
+    origin: str,
+    status: str,
+    *,
+    user_id: str | None = None,
+    email: str | None = None,
+    error: str | None = None,
+    is_new: bool | None = None,
+) -> None:
+    """Fire-and-forget auth event write (never raises into the request path)."""
+    try:
+        from services import db as _db
+        _db.record_auth_event(
+            user_id, email, status, error=error,
+            context=_auth_context(request, origin), is_new=is_new,
+        )
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -130,12 +171,14 @@ async def google_login(state: str = None):
 
 
 @router.get("/google/callback")
-async def google_callback(code: str = None, error: str = None, state: str = None):
+async def google_callback(request: Request, code: str = None, error: str = None, state: str = None):
     """Exchange Google auth code for tokens, create session, redirect to app."""
     origin = state if (state and state in FRONTEND_URLS) else FRONTEND_URLS[0]
     if error:
+        record_auth(request, origin, "failed", error=f"oauth_error:{error}")
         return RedirectResponse(url=f"{origin}?error={error}")
     if not code:
+        record_auth(request, origin, "failed", error="no_code")
         return RedirectResponse(url=f"{origin}?error=no_code")
 
     # Exchange code for tokens
@@ -153,11 +196,13 @@ async def google_callback(code: str = None, error: str = None, state: str = None
         )
 
     if token_resp.status_code != 200:
+        record_auth(request, origin, "failed", error="token_exchange_failed")
         return RedirectResponse(url=f"{origin}?error=token_exchange_failed")
 
     token_data = token_resp.json()
     access_token = token_data.get("access_token")
     if not access_token:
+        record_auth(request, origin, "failed", error="no_access_token")
         return RedirectResponse(url=f"{origin}?error=no_access_token")
 
     # Fetch user info from Google
@@ -169,6 +214,7 @@ async def google_callback(code: str = None, error: str = None, state: str = None
         )
 
     if userinfo_resp.status_code != 200:
+        record_auth(request, origin, "failed", error="userinfo_failed")
         return RedirectResponse(url=f"{origin}?error=userinfo_failed")
 
     info = userinfo_resp.json()
@@ -194,12 +240,16 @@ async def google_callback(code: str = None, error: str = None, state: str = None
     _save_users(users)
 
     # Mirror the user into Postgres analytics (no-op when DB not configured).
+    is_new = False
     try:
         from services import db as _db
         is_new = _db.upsert_user(user)
         _db.record_event(google_id, "login", {"email": email, "is_new": is_new})
     except Exception:
         pass
+
+    # Record the full sign-in context: which frontend, which backend, IP, UA.
+    record_auth(request, origin, "success", user_id=google_id, email=email, is_new=is_new)
 
     # Create JWT session
     token = _create_jwt(google_id, email, name, picture)
@@ -297,8 +347,15 @@ async def get_stats(request: Request):
 
 
 @router.post("/logout")
-async def logout():
+async def logout(request: Request):
     """Clear the session cookie."""
+    user = get_current_user(request)
+    if user:
+        try:
+            from services import db as _db
+            _db.record_event(user["id"], "logout", {})
+        except Exception:
+            pass
     response = JSONResponse(content={"message": "Logged out"})
     response.delete_cookie(key=COOKIE_NAME, path="/")
     return response

@@ -1,27 +1,47 @@
 """
-Admin panel — login (GitHub username + password) and analytics dashboard.
-Served by the backend at /admin; stats come from PostgreSQL via services.db.
+Clipo admin API + panel.
+
+  * JSON API lives under /admin/api/* (JWT bearer protected) and powers the
+    admin SPA. Includes analytics (summary, timeseries, breakdown, latency,
+    retention), sign-in session tracing (which frontend + which backend + IP),
+    request logs, structured server logs, backend health, user/job/event
+    browsing, admin account management and CSV export.
+  * The SPA itself is served as static files from /admin/app/ (see main.py);
+    /admin redirects there.
+
+Every mutating or notable read is written to the admin audit trail.
 """
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import RedirectResponse, Response
 from jose import jwt, JWTError
 
-from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_HOURS
+from config import JWT_SECRET, JWT_ALGORITHM
 from services import db
+from services import telemetry
 
 router = APIRouter(prefix="/admin")
 
 ADMIN_EXPIRE_HOURS = 24
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
 def _require_admin(request: Request) -> str:
     """Validate the admin bearer token; returns the admin username."""
     auth = request.headers.get("Authorization", "")
+    # Fall back to ?token= so browser navigation (CSV export links) works.
+    if not auth.lower().startswith("bearer ") and request.query_params.get("token"):
+        auth = f"Bearer {request.query_params['token']}"
     if not auth.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = auth[7:].strip()
@@ -34,13 +54,51 @@ def _require_admin(request: Request) -> str:
     return payload.get("sub", "")
 
 
+def _client_ip(request: Request) -> str:
+    ip = request.headers.get("X-Forwarded-For", "")
+    if ip and "," in ip:
+        ip = ip.split(",")[0].strip()
+    return ip or (getattr(request, "client", None).host if getattr(request, "client", None) else "")
+
+
+def _audit(request: Request, admin: str, action: str, detail: str = "") -> None:
+    try:
+        db.record_admin_audit(
+            admin, action,
+            ip=_client_ip(request),
+            user_agent=request.headers.get("User-Agent", ""),
+            detail=detail,
+        )
+    except Exception:
+        pass
+
+
+def _filters(request: Request, keys: list[str]) -> dict:
+    return {k: request.query_params.get(k) for k in keys if request.query_params.get(k) is not None}
+
+
+def _int_qp(request: Request, key: str, default: int) -> int:
+    try:
+        return int(request.query_params.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auth
+# ─────────────────────────────────────────────────────────────────────────────
+
 @router.post("/login")
-async def admin_login(body: dict):
+async def admin_login(request: Request, body: dict):
     username = str(body.get("username", "")).strip()
     password = str(body.get("password", ""))
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password required")
-    if not db.verify_admin(username, password):
+    ok = db.verify_admin(username, password)
+    db.record_admin_audit(username, "login", ip=_client_ip(request),
+                          user_agent=request.headers.get("User-Agent", ""),
+                          detail="success" if ok else "failed")
+    if not ok:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     payload = {
         "sub": username,
@@ -49,8 +107,234 @@ async def admin_login(body: dict):
         "iat": datetime.now(timezone.utc),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return {"token": token, "username": username}
+    return {"token": token, "username": username, "expires_in": ADMIN_EXPIRE_HOURS * 3600}
 
+
+@router.get("/api/me")
+async def admin_me(request: Request):
+    admin = _require_admin(request)
+    return {
+        "username": admin,
+        "backend": telemetry.BACKEND,
+        "db_enabled": db._enabled(),
+        "server_time": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Analytics
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/api/summary")
+async def api_summary(request: Request):
+    _require_admin(request)
+    days = _int_qp(request, "days", 14)
+    data = db.get_summary(days)
+    if not data:
+        raise HTTPException(status_code=503, detail="Analytics database not configured")
+    return data
+
+
+@router.get("/api/timeseries")
+async def api_timeseries(request: Request):
+    _require_admin(request)
+    metric = request.query_params.get("metric", "signups")
+    days = _int_qp(request, "days", 14)
+    return {"metric": metric, "days": days, "points": db.get_timeseries(metric, days)}
+
+
+@router.get("/api/breakdown")
+async def api_breakdown(request: Request):
+    _require_admin(request)
+    dim = request.query_params.get("dim", "frontend")
+    days = _int_qp(request, "days", 14)
+    kind = request.query_params.get("kind", "auth")
+    return {"dim": dim, "days": days, "kind": kind, "rows": db.get_breakdown(dim, days, kind)}
+
+
+@router.get("/api/latency")
+async def api_latency(request: Request):
+    _require_admin(request)
+    days = _int_qp(request, "days", 14)
+    return {"days": days, "points": db.get_latency_series(days)}
+
+
+@router.get("/api/retention")
+async def api_retention(request: Request):
+    _require_admin(request)
+    weeks = _int_qp(request, "weeks", 8)
+    return {"weeks": weeks, "cohorts": db.get_retention(weeks)}
+
+
+@router.get("/api/backends")
+async def api_backends(request: Request):
+    _require_admin(request)
+    return {"backends": db.list_backends()}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Listings (paged, filterable)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/api/sessions")
+async def api_sessions(request: Request):
+    _require_admin(request)
+    f = _filters(request, ["q", "frontend", "backend", "status", "days"])
+    return db.list_auth_events(f, _int_qp(request, "page", 1), _int_qp(request, "per", 25))
+
+
+@router.get("/api/requests")
+async def api_requests(request: Request):
+    _require_admin(request)
+    f = _filters(request, ["q", "method", "status", "backend", "path", "min_status", "days"])
+    return db.list_requests(f, _int_qp(request, "page", 1), _int_qp(request, "per", 25))
+
+
+@router.get("/api/users")
+async def api_users(request: Request):
+    _require_admin(request)
+    f = _filters(request, ["q", "days"])
+    return db.list_users_paginated(f, _int_qp(request, "page", 1), _int_qp(request, "per", 25))
+
+
+@router.get("/api/jobs")
+async def api_jobs(request: Request):
+    _require_admin(request)
+    f = _filters(request, ["q", "status", "source_type", "days"])
+    return db.list_jobs_paginated(f, _int_qp(request, "page", 1), _int_qp(request, "per", 25))
+
+
+@router.get("/api/events")
+async def api_events(request: Request):
+    _require_admin(request)
+    f = _filters(request, ["q", "event_name", "user_id", "days"])
+    return db.list_events_paginated(f, _int_qp(request, "page", 1), _int_qp(request, "per", 50))
+
+
+@router.get("/api/logs")
+async def api_logs(request: Request):
+    _require_admin(request)
+    f = _filters(request, ["q", "level", "backend", "days"])
+    return db.list_server_logs(f, _int_qp(request, "page", 1), _int_qp(request, "per", 50))
+
+
+@router.get("/api/audit")
+async def api_audit(request: Request):
+    _require_admin(request)
+    f = _filters(request, ["q", "admin", "days"])
+    return db.list_admin_audit(f, _int_qp(request, "page", 1), _int_qp(request, "per", 50))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Admin account management
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/api/admins")
+async def api_admins(request: Request):
+    admin = _require_admin(request)
+    _audit(request, admin, "list_admins")
+    return {"admins": db.list_admins()}
+
+
+@router.post("/api/admins")
+async def api_create_admin(request: Request, body: dict):
+    admin = _require_admin(request)
+    username = str(body.get("username", "")).strip()
+    password = str(body.get("password", ""))
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password required")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    ok = db.create_admin(username, password)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Admin already exists (or bcrypt unavailable)")
+    _audit(request, admin, "create_admin", username)
+    return {"message": f"Admin {username} created"}
+
+
+@router.delete("/api/admins/{username}")
+async def api_delete_admin(request: Request, username: str):
+    admin = _require_admin(request)
+    if username == admin:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    ok = db.delete_admin(username)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Cannot delete last admin or admin not found")
+    _audit(request, admin, "delete_admin", username)
+    return {"message": f"Admin {username} deleted"}
+
+
+@router.post("/api/admins/{username}/password")
+async def api_reset_admin_password(request: Request, username: str, body: dict):
+    admin = _require_admin(request)
+    password = str(body.get("password", ""))
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    ok = db.set_admin_password(username, password)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Failed to update password")
+    _audit(request, admin, "reset_password", username)
+    return {"message": f"Password updated for {username}"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CSV export
+# ─────────────────────────────────────────────────────────────────────────────
+
+_EXPORTS = {
+    "users": ("export_users", ["id", "email", "name", "display_name", "created_at", "last_login"]),
+    "sessions": (
+        "export_auth_events",
+        ["id", "created_at", "user_id", "email", "provider", "status", "error", "is_new",
+         "frontend", "frontend_origin", "backend_id", "backend_name", "instance_id",
+         "ip", "country", "browser", "os", "device"],
+    ),
+    "requests": (
+        "export_requests",
+        ["id", "created_at", "backend_id", "instance_id", "method", "path", "status",
+         "duration_ms", "ip", "user_id", "frontend", "frontend_origin", "browser", "os", "device"],
+    ),
+    "logs": (
+        "export_server_logs",
+        ["id", "created_at", "backend_id", "instance_id", "level", "logger", "filename",
+         "lineno", "message", "exc_info"],
+    ),
+    "events": (
+        "export_events",
+        ["id", "created_at", "user_id", "event_name", "properties"],
+    ),
+}
+
+
+@router.get("/api/export/{kind}")
+async def api_export(request: Request, kind: str):
+    _require_admin(request)
+    spec = _EXPORTS.get(kind)
+    if not spec:
+        raise HTTPException(status_code=404, detail="Unknown export kind")
+    days = request.query_params.get("days")
+    rows = getattr(db, spec[0])(int(days) if days else None)
+    cols = spec[1]
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(cols)
+    for row in rows:
+        writer.writerow([
+            json.dumps(row.get(c)) if isinstance(row.get(c), (dict, list)) else row.get(c, "")
+            for c in cols
+        ])
+    filename = f"clipo_{kind}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Legacy compatibility endpoints (keep old dashboard clients working)
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/stats")
 async def admin_stats(request: Request):
@@ -85,231 +369,11 @@ async def admin_logs(request: Request):
     return {"logs": db.list_logs(200)}
 
 
-PANEL_HTML = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Clipo Admin</title>
-<style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #0b0f17; color: #e6edf7; min-height: 100vh;
-  }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
-  header { display: flex; align-items: center; justify-content: space-between; padding: 18px 0 22px; }
-  header h1 { font-size: 22px; }
-  header .who { color: #8ea2c0; font-size: 13px; }
-  .btn {
-    background: #3b82f6; color: #fff; border: 0; border-radius: 8px;
-    padding: 10px 18px; font-size: 14px; cursor: pointer;
-  }
-  .btn:hover { background: #2f6fe0; }
-  .btn.ghost { background: transparent; border: 1px solid #2b3a54; }
-  .card {
-    background: #131a26; border: 1px solid #22304a; border-radius: 12px; padding: 18px; margin-bottom: 18px;
-  }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .stat { background: #131a26; border: 1px solid #22304a; border-radius: 12px; padding: 14px; }
-  .stat .num { font-size: 26px; font-weight: 700; }
-  .stat .lbl { color: #8ea2c0; font-size: 12px; margin-top: 4px; text-transform: uppercase; letter-spacing: .04em; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #1d2839; white-space: nowrap; }
-  th { color: #8ea2c0; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
-  td .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; }
-  .badge.green { background: #12351f; color: #4ade80; }
-  .badge.red { background: #3b1216; color: #f87171; }
-  .badge.yellow { background: #3a2e12; color: #fbbf24; }
-  .badge.gray { background: #222b3b; color: #9aa8c0; }
-  .bars { display: flex; align-items: flex-end; gap: 6px; height: 120px; padding-top: 10px; }
-  .bars .bar { flex: 1; background: #3b82f6; border-radius: 4px 4px 0 0; min-height: 2px; position: relative; }
-  .bars .bar span { position: absolute; top: -18px; left: 0; right: 0; text-align: center; font-size: 10px; color: #8ea2c0; }
-  .day-lbl { font-size: 10px; color: #5d6f8c; text-align: center; margin-top: 6px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
-  .error { color: #f87171; font-size: 13px; min-height: 18px; margin-top: 10px; }
-  .muted { color: #8ea2c0; font-size: 12px; }
-  .log-err { color: #f87171; }
-  .log-warn { color: #fbbf24; }
-  input {
-    width: 100%; background: #0b0f17; border: 1px solid #2b3a54; color: #e6edf7;
-    border-radius: 8px; padding: 11px 12px; font-size: 14px; margin-bottom: 10px;
-  }
-  input:focus { outline: none; border-color: #3b82f6; }
-  .login-card { max-width: 340px; margin: 12vh auto 0; }
-  .login-card h2 { margin-bottom: 18px; }
-  #logout-wrap { display: flex; align-items: center; gap: 10px; }
-  .hidden { display: none !important; }
-  .scroll { max-height: 340px; overflow-y: auto; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>Clipo Admin</h1>
-    <div id="logout-wrap" class="hidden"><span class="who" id="whoami"></span><button class="btn ghost" onclick="logout()">Logout</button></div>
-  </header>
+# ─────────────────────────────────────────────────────────────────────────────
+# Panel serving — redirect to the SPA mounted at /admin/app/
+# ─────────────────────────────────────────────────────────────────────────────
 
-  <div id="login-view">
-    <div class="card login-card">
-      <h2>Admin Sign In</h2>
-      <input id="user" placeholder="GitHub username" autocomplete="username">
-      <input id="pass" type="password" placeholder="Password" autocomplete="current-password">
-      <button class="btn" style="width:100%" onclick="login()">Sign in</button>
-      <div class="error" id="login-err"></div>
-    </div>
-  </div>
-
-  <div id="dash-view" class="hidden">
-    <div class="stats" id="stats"></div>
-    <div class="grid2" style="margin-top:18px">
-      <div class="card">
-        <h3 style="margin-bottom:6px">Signups (last 14 days)</h3>
-        <div class="bars" id="signup-bars"></div>
-      </div>
-      <div class="card">
-        <h3 style="margin-bottom:6px">Jobs (last 14 days)</h3>
-        <div class="bars" id="jobs-bars"></div>
-      </div>
-    </div>
-    <div class="card">
-      <h3 style="margin-bottom:8px">Top events (last 14 days)</h3>
-      <table><thead><tr><th>Event</th><th>Count</th></tr></thead><tbody id="top-events"></tbody></table>
-    </div>
-    <div class="grid2">
-      <div class="card">
-        <h3 style="margin-bottom:8px">Recent signups</h3>
-        <div class="scroll"><table><thead><tr><th>Email</th><th>Name</th><th>Joined</th></tr></thead><tbody id="users"></tbody></table></div>
-      </div>
-      <div class="card">
-        <h3 style="margin-bottom:8px">Recent jobs</h3>
-        <div class="scroll"><table><thead><tr><th>Type</th><th>Status</th><th>Title</th><th>Created</th></tr></thead><tbody id="jobs"></tbody></table></div>
-      </div>
-    </div>
-    <div class="card">
-      <h3 style="margin-bottom:8px">Live events</h3>
-      <div class="scroll"><table><thead><tr><th>Time</th><th>User</th><th>Event</th><th>Details</th></tr></thead><tbody id="events"></tbody></table></div>
-    </div>
-    <div class="card">
-      <h3 style="margin-bottom:8px">Server logs</h3>
-      <div class="scroll"><table><thead><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead><tbody id="logs"></tbody></table></div>
-    </div>
-  </div>
-</div>
-
-<script>
-let token = localStorage.getItem('clipo_admin_token') || '';
-let autoRefresh = null;
-
-function api(path) {
-  return fetch(path, { headers: { 'Authorization': 'Bearer ' + token } })
-    .then(r => { if (r.status === 401) { showLogin(); throw new Error('unauthorized'); } return r.json(); });
-}
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-function shortId(s) { return s && s.length > 12 ? s.slice(0, 12) + '…' : (s || '-'); }
-function fmt(iso) {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-function badge(status) {
-  const cls = { completed: 'green', failed: 'red', pending: 'yellow', analyzing: 'yellow', transcribing: 'yellow' }[status] || 'gray';
-  return '<span class="badge ' + cls + '">' + esc(status) + '</span>';
-}
-function renderBars(series, el) {
-  const days = {};
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    days[d.toISOString().slice(0, 10)] = 0;
-  }
-  (series || []).forEach(r => { days[r.day] = r.n; });
-  const vals = Object.values(days);
-  const max = Math.max(1, ...vals);
-  el.innerHTML = vals.map(v =>
-    '<div class="bar" style="height:' + (v / max * 100) + '%" title="' + v + '"><span>' + (v || '') + '</span></div>'
-  ).join('');
-}
-
-function login() {
-  const username = document.getElementById('user').value.trim();
-  const password = document.getElementById('pass').value;
-  document.getElementById('login-err').textContent = '';
-  fetch('/admin/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  }).then(async r => {
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || 'Login failed');
-    token = d.token; localStorage.setItem('clipo_admin_token', token);
-    showDash(d.username);
-  }).catch(e => { document.getElementById('login-err').textContent = e.message; });
-}
-function logout() {
-  token = ''; localStorage.removeItem('clipo_admin_token');
-  if (autoRefresh) clearInterval(autoRefresh);
-  showLogin();
-}
-function showLogin() {
-  document.getElementById('login-view').classList.remove('hidden');
-  document.getElementById('dash-view').classList.add('hidden');
-  document.getElementById('logout-wrap').classList.add('hidden');
-}
-function showDash(username) {
-  document.getElementById('login-view').classList.add('hidden');
-  document.getElementById('dash-view').classList.remove('hidden');
-  document.getElementById('logout-wrap').classList.remove('hidden');
-  document.getElementById('whoami').textContent = 'Signed in as ' + username;
-  loadDash();
-  if (autoRefresh) clearInterval(autoRefresh);
-  autoRefresh = setInterval(loadDash, 30000);
-}
-function loadDash() {
-  api('/admin/stats').then(s => {
-    document.getElementById('stats').innerHTML = [
-      ['Users', s.total_users], ['Signups (7d)', s.signups_7d],
-      ['Jobs', s.total_jobs], ['Jobs (7d)', s.jobs_7d],
-      ['Completed', s.jobs_completed], ['Failed', s.jobs_failed],
-      ['Events (24h)', s.events_24h], ['Errors (24h)', s.errors_24h]
-    ].map(([l, n]) => '<div class="stat"><div class="num">' + n + '</div><div class="lbl">' + l + '</div></div>').join('');
-    renderBars(s.signups_series, document.getElementById('signup-bars'));
-    renderBars(s.jobs_series, document.getElementById('jobs-bars'));
-    document.getElementById('top-events').innerHTML =
-      (s.events_by_name || []).map(e => '<tr><td>' + esc(e.event_name) + '</td><td>' + e.n + '</td></tr>').join('');
-  }).catch(() => {});
-  api('/admin/users').then(d => {
-    document.getElementById('users').innerHTML = (d.users || []).map(u =>
-      '<tr><td>' + esc(u.email || '-') + '</td><td>' + esc(u.name || '-') + '</td><td class="muted">' + fmt(u.created_at) + '</td></tr>').join('');
-  }).catch(() => {});
-  api('/admin/jobs').then(d => {
-    document.getElementById('jobs').innerHTML = (d.jobs || []).map(j =>
-      '<tr><td class="mono">' + esc(j.source_type || '-') + '</td><td>' + badge(j.status) + '</td><td>' + esc((j.video_title || '').slice(0, 40)) + '</td><td class="muted">' + fmt(j.created_at) + '</td></tr>').join('');
-  }).catch(() => {});
-  api('/admin/events').then(d => {
-    document.getElementById('events').innerHTML = (d.events || []).map(e => {
-      let props = '';
-      try { props = Object.entries(JSON.parse(e.properties || '{}')).map(([k, v]) => k + '=' + esc(String(v)).slice(0, 30)).join(', '); } catch (_) {}
-      return '<tr><td class="muted">' + fmt(e.created_at) + '</td><td class="mono">' + shortId(e.user_id) + '</td><td>' + esc(e.event_name) + '</td><td class="muted">' + props + '</td></tr>';
-    }).join('');
-  }).catch(() => {});
-  api('/admin/logs').then(d => {
-    document.getElementById('logs').innerHTML = (d.logs || []).map(l =>
-      '<tr><td class="muted">' + fmt(l.created_at) + '</td><td><span class="badge ' + (l.level === 'error' ? 'red' : l.level === 'warn' ? 'yellow' : 'gray') + '">' + esc(l.level) + '</span></td><td class="mono">' + esc(String(l.message).slice(0, 120)) + '</td></tr>').join('');
-  }).catch(() => {});
-}
-
-if (token) { showDash(localStorage.getItem('clipo_admin_user') || ''); } else { showLogin(); }
-</script>
-</body>
-</html>
-"""
-
-
-@router.get("", response_class=HTMLResponse)
-@router.get("/", response_class=HTMLResponse)
+@router.get("", include_in_schema=False)
+@router.get("/", include_in_schema=False)
 async def admin_panel():
-    return HTMLResponse(PANEL_HTML)
+    return RedirectResponse(url="/admin/app/", status_code=302)
