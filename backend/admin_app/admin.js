@@ -1138,7 +1138,7 @@ function init() {
     const password = $("#pass").value;
     $("#login-err").textContent = "";
     try {
-      const res = await fetch("/admin/api/login", {
+      const res = await fetch("/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),

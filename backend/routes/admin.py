@@ -110,6 +110,12 @@ async def admin_login(request: Request, body: dict):
     return {"token": token, "username": username, "expires_in": ADMIN_EXPIRE_HOURS * 3600}
 
 
+@router.post("/api/login")
+async def admin_login_api(request: Request, body: dict):
+    """Alias for the SPA which historically posts to /admin/api/login."""
+    return await admin_login(request, body)
+
+
 @router.get("/api/me")
 async def admin_me(request: Request):
     admin = _require_admin(request)
