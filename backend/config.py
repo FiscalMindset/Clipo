@@ -39,7 +39,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 load_dotenv(BACKEND_DIR / ".env", override=True)
 
 # --- Directory Paths ---
-UPLOAD_DIR = PROJECT_ROOT / "uploads"
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(PROJECT_ROOT / "uploads")))
 AUDIO_DIR = PROJECT_ROOT / "audio"
 TRANSCRIPT_DIR = PROJECT_ROOT / "transcripts"
 CLIP_DIR = PROJECT_ROOT / "clips"
@@ -104,6 +104,15 @@ MAX_YOUTUBE_DURATION = 3 * 60 * 60  # 3 hours in seconds
 # confirm you're not a bot" wall. Point this at the local server (default) or
 # a remote one; set empty to disable the PO-token strategies entirely.
 POT_PROVIDER_BASE_URL = os.getenv("POT_PROVIDER_BASE_URL", "http://127.0.0.1:4416").strip()
+
+# --- External download worker ---
+# When set, YouTube jobs that hit Google's "Sign in to confirm you're not a
+# bot" wall on this server's IP are parked in WAITING_WORKER state and handed
+# off to an external downloader (run on an unflagged IP, e.g. the operator's
+# home machine via worker_downloader.py). The worker downloads the video and
+# uploads it back through /api/worker/upload, after which the pipeline resumes
+# server-side. When empty, the handoff is disabled and such jobs fail as before.
+WORKER_TOKEN = os.getenv("WORKER_TOKEN", "").strip()
 
 # Optional cookies file (Netscape format) exported from your browser with a
 # "Get cookies.txt" extension. This is the most reliable way to bypass

@@ -141,7 +141,7 @@ def _yt_dlp_strategies() -> list[list[str]]:
 
 def _bot_wall_hint(last_err: str) -> str:
     """Append an actionable hint when yt-dlp hit YouTube's bot verification."""
-    if not last_err or ("Sign in" not in last_err and "not a bot" not in last_err):
+    if not is_bot_wall(last_err):
         return last_err
     return (
         f"{last_err}\n\n"
@@ -151,6 +151,11 @@ def _bot_wall_hint(last_err: str) -> str:
         "the hosting IP is flagged by Google — it typically clears on its own, "
         "and a clean proxy unblocks it permanently."
     )
+
+
+def is_bot_wall(err: str) -> bool:
+    """True when yt-dlp's error is YouTube's IP-level bot verification wall."""
+    return bool(err) and ("not a bot" in err or "Sign in to confirm" in err)
 
 
 def _yt_dlp_command(*args: str) -> list[str]:

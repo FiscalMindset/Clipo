@@ -12,6 +12,9 @@ class JobStatus(str, Enum):
     PENDING = "pending"
     DOWNLOADING = "downloading"
     UPLOADING = "uploading"
+    # YouTube download blocked by the server IP's bot flag — the job is parked
+    # until an external download worker (on an unflagged IP) uploads the video.
+    WAITING_WORKER = "waiting_worker"
     EXTRACTING_AUDIO = "extracting_audio"
     TRANSCRIBING = "transcribing"
     ANALYZING = "analyzing"

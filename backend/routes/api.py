@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 import subprocess
 
-from config import CLIP_DIR, TEMP_DIR
+from config import CLIP_DIR, TEMP_DIR, UPLOAD_DIR, WORKER_TOKEN
 
 # API router
 from fastapi import APIRouter
@@ -32,6 +32,7 @@ from services.pipeline_service import (
     get_processing_status,
     run_pipeline,
     get_user_jobs,
+    mark_video_uploaded,
     jobs,
 )
 from services.caption_service import generate_captioned_clip, list_styles
@@ -339,6 +340,72 @@ async def start_processing(request: Request, job_id: str):
     db.record_event(user_id, "job_started", {"job_id": job_id})
 
     return {"message": "Processing started", "job_id": job_id}
+
+
+# --- External download worker ---
+# The server's Azure IP is flagged by Google, so some videos hit the "Sign in
+# to confirm you're not a bot" wall. Those jobs are parked in WAITING_WORKER
+# and picked up by an external downloader running on an unflagged IP (see
+# worker_downloader.py). It downloads the video and uploads it back here.
+def _require_worker(request: Request) -> None:
+    token = request.headers.get("X-Worker-Token", "")
+    if not WORKER_TOKEN or token != WORKER_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid worker token")
+
+
+@router.get("/worker/pending")
+async def worker_pending(request: Request):
+    """List YouTube jobs waiting for the external download worker."""
+    _require_worker(request)
+    pending = [
+        {
+            "job_id": jid,
+            "youtube_url": job["youtube_url"],
+            "video_title": job.get("video_title", ""),
+            "created_at": job.get("created_at"),
+        }
+        for jid, job in jobs.items()
+        if job.get("source_type") == "youtube"
+        and job.get("status") == JobStatus.WAITING_WORKER
+        and job.get("youtube_url")
+    ]
+    return {"jobs": pending}
+
+
+@router.post("/worker/upload/{job_id}")
+async def worker_upload(request: Request, job_id: str, file: UploadFile = File(...)):
+    """Accept the video uploaded by the external worker and resume the pipeline."""
+    _require_worker(request)
+
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.get("source_type") != "youtube":
+        raise HTTPException(status_code=400, detail="Not a YouTube job")
+    if job.get("status") != JobStatus.WAITING_WORKER:
+        raise HTTPException(status_code=400, detail="Job is not waiting for a worker download")
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    dest = UPLOAD_DIR / f"{job_id}.mp4"
+    with dest.open("wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk)
+
+    size_mb = round(dest.stat().st_size / (1024 * 1024), 1)
+    if size_mb <= 0:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+    title = file.filename or None
+    mark_video_uploaded(job_id, dest, title)
+
+    from main import whisper_model
+    asyncio.create_task(run_pipeline(job_id, whisper_model))
+    db.record_event(None, "worker_video_uploaded", {"job_id": job_id, "size_mb": size_mb})
+
+    return {"message": "Video received; pipeline resuming", "job_id": job_id, "size_mb": size_mb}
 
 
 @router.get("/status/{job_id}", response_model=ProcessingStatus)
