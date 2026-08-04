@@ -300,6 +300,10 @@ def attach_logging_handler(logger: logging.Logger | None = None) -> None:
     """
     if not db._enabled() or not TELEMETRY_ENABLED:
         return
+    # The root logger defaults to WARNING, so INFO records from app loggers
+    # (e.g. "yt-dlp info: strategy N OK") are dropped before reaching the
+    # handler below. Lower it so INFO lands in server_logs too.
+    logging.getLogger().setLevel(logging.INFO)
     handler = PostgresLogHandler(level=logging.INFO)
     handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
     (logger or logging.getLogger()).addHandler(handler)

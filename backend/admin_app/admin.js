@@ -322,8 +322,8 @@ function hBar(el, rows, opts = {}) {
     row.style.cssText = "margin-bottom:10px";
     const top = document.createElement("div");
     top.style.cssText = "display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px";
-    top.innerHTML = `<span>${esc(opts.labelFn ? opts.labelFn(r) : r.label)}</span>` +
-      `<span class="muted">${esc(opts.valFn ? opts.valFn(r) : fmtNum(r[opts.valueKey || "n"]))}</span>`;
+    top.innerHTML = `<span>${opts.labelFn ? opts.labelFn(r) : esc(r.label)}</span>` +
+      `<span class="muted">${opts.valFn ? opts.valFn(r) : esc(fmtNum(r[opts.valueKey || "n"]))}</span>`;
     const barWrap = document.createElement("div");
     barWrap.style.cssText = "background:#161d2b;border-radius:4px;height:8px;overflow:hidden";
     const bar = document.createElement("div");
@@ -604,7 +604,7 @@ function renderAnalytics() {
         <div class="panel"><h3>Share</h3><div id="br-donut"></div></div>
       </div>
       <div style="height:16px"></div>` + tableHtml(headers, rowHtml);
-      hBar($("#br-bar"), rows, { labelFn: (r) => esc(trunc(r.label || "—", 34)) });
+      hBar($("#br-bar"), rows, { labelFn: (r) => trunc(r.label || "—", 34) });
       donut($("#br-donut"), rows.slice(0, 8));
     }).catch((e) => { body.innerHTML = `<div class="panel"><div class="error">${esc(e.message)}</div></div>`; });
   }

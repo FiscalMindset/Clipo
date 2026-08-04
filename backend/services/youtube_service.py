@@ -6,13 +6,20 @@ Uses subprocess.run in a thread executor for Windows compatibility.
 import re
 import asyncio
 import json
+import logging
 import subprocess
 import functools
 import sys
 from pathlib import Path
 from fastapi import HTTPException
 
-from config import UPLOAD_DIR, MAX_YOUTUBE_DURATION, YOUTUBE_COOKIES_FILE
+logger = logging.getLogger(__name__)
+
+# Set once the first time strategies are built, so each instance reports in
+# server_logs whether an operator-supplied cookies.txt is active.
+_cookies_logged = False
+
+from config import UPLOAD_DIR, MAX_YOUTUBE_DURATION, YOUTUBE_COOKIES_FILE, POT_PROVIDER_BASE_URL
 
 
 YOUTUBE_URL_PATTERN = re.compile(
@@ -42,18 +49,36 @@ def _yt_dlp_strategies() -> list[list[str]]:
     """
     Ordered list of yt-dlp extra-argument sets to try per request.
 
-    YouTube increasingly throws a "Sign in to confirm you're not a bot" wall,
-    which makes a plain download fail. We work around it by trying, in order:
-      1. A cookies.txt file if configured (most reliable — full auth).
-      2. Browser cookies from a logged-in session (zero config).
-      3. TV / android_vr / mweb / web_embedded clients — these run through
-         YouTube's TV, Android VR and mobile-web players, which are not
-         gated by the bot check the way the desktop web player is. Most
-         cookie-less bypasses in current yt-dlp go through these.
-      4. TV + android_vr + web_embedded + mweb in one pass (yt-dlp walks
-         the list until one client yields usable formats).
-      5. TV + web_safari + ios — broader legacy client fallback.
-      6. Default client — fast path when there's no bot wall.
+    YouTube throws a "Sign in to confirm you're not a bot" wall on datacenter
+    IPs (Azure) regardless of client or TLS fingerprint. Two things make a
+    request look like a real browser and get past it:
+
+    * TLS impersonation: ``--impersonate`` (backed by curl_cffi) makes every
+      request carry a genuine Chrome/Safari fingerprint and HTTP/2 behaviour.
+    * A proof-of-origin token: the bundled bgutil HTTP server (see
+      POT_PROVIDER_BASE_URL) mints a PO token for the ``web`` player, which is
+      po_token-gated in current YouTube builds.
+
+    Strategy order, most reliable first:
+      1. Impersonated Chrome on the ``web`` player with a PO token — the
+         primary automatic path for flagged IPs. yt-dlp pulls the token from
+         the local bgutil server (port 4416) via the bgutil-ytdlp-pot-provider
+         plugin.
+      2. The same PO-token path across more player clients.
+      3. An operator-supplied cookies.txt (via env secret) — the most reliable
+         bypass. It is tried right after the automatic PO-token path so it only
+         serves videos the token cannot get past (the PO-token path does not
+         always bypass YouTube's per-video bot check).
+      4. Impersonated Chrome on android_vr/tv_embedded/… — these embedded and
+         VR players return usable formats without a po_token where the wall is
+         not enforced (they still pass through impersonation).
+      5. Impersonated Chrome on ``web`` without a PO token (works where the
+         wall is not enforced).
+      6. Impersonated Safari on tv_embedded/web_safari.
+      7. Impersonated Chrome on the default client — fast path.
+      8. Browser-cookie strategies (only useful when a real browser profile
+         is present, e.g. local dev).
+      9. Legacy client swaps without impersonation.
     The first strategy that succeeds wins; if all fail we surface the last error.
 
     Every strategy also enables ``--remote-components ejs:github``. Recent
@@ -63,11 +88,43 @@ def _yt_dlp_strategies() -> list[list[str]]:
     GitHub and cached. Without this, only images resolve and the format
     request fails.
     """
+    global _cookies_logged
     base = ["--remote-components", "ejs:github"]
+    chrome = ["--impersonate", "chrome"]
     strategies: list[list[str]] = []
+    pot = []
+    if POT_PROVIDER_BASE_URL:
+        pot = ["--extractor-args", f"youtubepot-bgutilhttp:base_url={POT_PROVIDER_BASE_URL}"]
+    cookies = []
     if YOUTUBE_COOKIES_FILE:
-        strategies.append([*base, "--cookies", YOUTUBE_COOKIES_FILE])
+        try:
+            if Path(YOUTUBE_COOKIES_FILE).is_file() and Path(YOUTUBE_COOKIES_FILE).stat().st_size > 0:
+                cookies = ["--cookies", YOUTUBE_COOKIES_FILE]
+        except OSError:
+            cookies = []
+    if not _cookies_logged:
+        _cookies_logged = True
+        if cookies:
+            logger.info("yt-dlp cookies: using %s", YOUTUBE_COOKIES_FILE)
+        else:
+            logger.info("yt-dlp cookies: none configured")
+    if pot:
+        strategies.extend([
+            [*base, *chrome, *pot, "--extractor-args", "youtube:player_client=web"],
+            [*base, *chrome, *pot, "--extractor-args", "youtube:player_client=web,tv_embedded,mweb,web_embedded"],
+        ])
+    if cookies:
+        strategies.extend([
+            [*base, *chrome, *cookies],
+            [*base, *chrome, *pot, *cookies, "--extractor-args", "youtube:player_client=web"],
+            [*base, *cookies],
+        ])
     strategies.extend([
+        [*base, *chrome, "--extractor-args", "youtube:player_client=android_vr,tv_embedded,web_embedded,android,mweb,tv,web_safari"],
+        [*base, *chrome, "--extractor-args", "youtube:player_client=android_vr,tv_embedded"],
+        [*base, *chrome, "--extractor-args", "youtube:player_client=web"],
+        [*base, "--impersonate", "safari", "--extractor-args", "youtube:player_client=tv_embedded,web_safari"],
+        [*base, *chrome],
         [*base, "--cookies-from-browser", "chrome"],
         [*base, "--cookies-from-browser", "edge"],
         [*base, "--cookies-from-browser", "brave"],
@@ -78,11 +135,6 @@ def _yt_dlp_strategies() -> list[list[str]]:
         [*base, "--extractor-args", "youtube:player_client=tv,android_vr,web_embedded,mweb"],
         [*base, "--extractor-args", "youtube:player_client=tv,web_safari,ios"],
     ])
-    if YOUTUBE_COOKIES_FILE:
-        strategies.append(
-            [*base, "--extractor-args", "youtube:player_client=tv,android_vr,web_embedded,mweb",
-             "--cookies", YOUTUBE_COOKIES_FILE]
-        )
     strategies.append([*base])
     return strategies
 
@@ -93,12 +145,11 @@ def _bot_wall_hint(last_err: str) -> str:
         return last_err
     return (
         f"{last_err}\n\n"
-        "YouTube is asking for verification because this request looks "
-        "automated. Fix it permanently by exporting cookies from a "
-        "logged-in browser (use the \"Get cookies.txt LOCALLY\" extension), "
-        "then base64-encode the cookies.txt content into the "
-        "YOUTUBE_COOKIES_B64 secret on Azure (or set YOUTUBE_COOKIES_FILE "
-        "in backend/.env). Fresh cookies unblock downloads immediately."
+        "YouTube's bot check is triggered by the server's IP address. Downloads "
+        "already retry automatically with browser impersonation and alternate "
+        "player clients, so no action is needed from you. If this keeps failing "
+        "the hosting IP is flagged by Google — it typically clears on its own, "
+        "and a clean proxy unblocks it permanently."
     )
 
 
@@ -114,7 +165,7 @@ def _yt_dlp_command(*args: str) -> list[str]:
 def _get_video_info_sync(url: str) -> dict:
     """Fetch video metadata without downloading (sync, runs in executor)."""
     last_err = "No yt-dlp strategies succeeded"
-    for extra in _yt_dlp_strategies():
+    for idx, extra in enumerate(_yt_dlp_strategies()):
         try:
             result = subprocess.run(
                 _yt_dlp_command(*extra, "--dump-json", "--no-download", "--no-warnings", url),
@@ -123,17 +174,23 @@ def _get_video_info_sync(url: str) -> dict:
                 timeout=180,
             )
             if result.returncode == 0 and result.stdout.strip():
+                logger.info("yt-dlp info: strategy %d OK for %s", idx, url)
                 return json.loads(result.stdout)
             last_err = result.stderr.strip()
+            logger.warning(
+                "yt-dlp info: strategy %d failed for %s: %s",
+                idx, url, last_err[-300:],
+            )
         except Exception as exc:  # noqa: BLE001 - fall through to next strategy
             last_err = str(exc)
+            logger.warning("yt-dlp info: strategy %d error for %s: %s", idx, url, exc)
     raise RuntimeError(f"Failed to fetch video info: {_bot_wall_hint(last_err)}")
 
 
 def _download_video_sync(url: str, output_path: str) -> None:
     """Download video using yt-dlp (sync, runs in executor)."""
     last_err = "No yt-dlp strategies succeeded"
-    for extra in _yt_dlp_strategies():
+    for idx, extra in enumerate(_yt_dlp_strategies()):
         try:
             result = subprocess.run(
                 _yt_dlp_command(
@@ -150,10 +207,16 @@ def _download_video_sync(url: str, output_path: str) -> None:
                 timeout=600,  # 10 minute timeout for large videos
             )
             if result.returncode == 0:
+                logger.info("yt-dlp download: strategy %d OK for %s", idx, url)
                 return
             last_err = result.stderr.strip()
+            logger.warning(
+                "yt-dlp download: strategy %d failed for %s: %s",
+                idx, url, last_err[-300:],
+            )
         except Exception as exc:  # noqa: BLE001 - fall through to next strategy
             last_err = str(exc)
+            logger.warning("yt-dlp download: strategy %d error for %s: %s", idx, url, exc)
     raise RuntimeError(f"Failed to download video: {_bot_wall_hint(last_err)}")
 
 

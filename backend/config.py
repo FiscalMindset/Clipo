@@ -97,6 +97,14 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi"}
 # --- YouTube Constraints ---
 MAX_YOUTUBE_DURATION = 3 * 60 * 60  # 3 hours in seconds
 
+# --- YouTube PO token provider (bgutil) ---
+# The container ships a small HTTP server (bgutil-ytdlp-pot-provider) that
+# mints proof-of-origin tokens. yt-dlp attaches one to the `web` player so it
+# can fetch even when YouTube flags the datacenter IP with the "Sign in to
+# confirm you're not a bot" wall. Point this at the local server (default) or
+# a remote one; set empty to disable the PO-token strategies entirely.
+POT_PROVIDER_BASE_URL = os.getenv("POT_PROVIDER_BASE_URL", "http://127.0.0.1:4416").strip()
+
 # Optional cookies file (Netscape format) exported from your browser with a
 # "Get cookies.txt" extension. This is the most reliable way to bypass
 # YouTube's "Sign in to confirm you're not a bot" wall. Leave empty to fall
@@ -112,7 +120,9 @@ MAX_YOUTUBE_DURATION = 3 * 60 * 60  # 3 hours in seconds
 def _resolve_youtube_cookies() -> str:
     file_path = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
     if file_path:
-        return file_path
+        if Path(file_path).is_file() and Path(file_path).stat().st_size > 0:
+            return file_path
+        return ""
 
     cookies_b64 = os.getenv("YOUTUBE_COOKIES_B64", "")
     cookies_content = os.getenv("YOUTUBE_COOKIES", "")
