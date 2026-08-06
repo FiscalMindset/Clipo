@@ -1,0 +1,77 @@
+name: Mirror upstream main to this fork
+
+# Keeps FiscalMindset/Clipo (the fork) in sync with SACHINN122/Clipo (upstream)
+# and deploys it to Render. The Render static site clipo-6bfs.onrender.com is
+# built from the fork, so every upstream push reaches production.
+#
+# Runs only on the fork itself (guard on github.repository). The upstream
+# repo's "Sync main to fork" workflow fast-forwards the fork's main on every
+# push; that push triggers this workflow, which mirrors any remaining commits
+# and triggers a Render deploy. A 10-minute scheduled poll acts as a safety
+# net, and workflow_dispatch allows manual runs. On the upstream repo the job
+# is skipped via the repository guard.
+#
+# The Render deploy goes through the Render API (what the Render CLI calls)
+# using a RENDER_API_KEY secret on the fork, so deploys are deterministic and
+# do not depend on GitHub's push webhook reaching Render.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror-upstream
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    if: github.repository == 'FiscalMindset/Clipo'
+    runs-on: ubuntu-latest
+    env:
+      HAS_RENDER_KEY: ${{ secrets.RENDER_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch upstream main
+        run: |
+          git remote add upstream https://github.com/SACHINN122/Clipo.git
+          git fetch upstream main
+
+      - name: Fast-forward fork main when upstream has new commits
+        run: |
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "fork main already contains upstream main; nothing to do"
+          else
+            echo "new upstream commits found; updating fork main"
+            git push origin upstream/main:main
+          fi
+
+      - name: Trigger Render deploy when live commit is behind upstream
+        if: env.HAS_RENDER_KEY == 'true'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          SERVICE_ID="srv-d9m252jm8hqs739ndnb0"
+          UPSTREAM=$(git rev-parse upstream/main)
+          LIVE=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploys?limit=1&status=live" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0]['deploy']['commit']['id']) if d else print('')")
+          if [ "$LIVE" = "$UPSTREAM" ]; then
+            echo "already live on ${UPSTREAM}; skipping deploy"
+          else
+            echo "deploying ${UPSTREAM} (live was ${LIVE:-none})"
+            curl -s -X POST \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d '{"clearCache":"do_not_clear"}' \
+              "https://api.render.com/v1/services/${SERVICE_ID}/deploys"
+          fi

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 import subprocess
 
-from config import CLIP_DIR
+from config import CLIP_DIR, TEMP_DIR, UPLOAD_DIR, WORKER_TOKEN
 
 # API router
 from fastapi import APIRouter
@@ -32,19 +32,83 @@ from services.pipeline_service import (
     get_processing_status,
     run_pipeline,
     get_user_jobs,
+    mark_video_uploaded,
     jobs,
 )
 from services.caption_service import generate_captioned_clip, list_styles
+from services import db
 from routes.auth import get_current_user, require_user
+
+
+_REPORT_TYPE_LABELS = {
+    "bug": ["bug"],
+    "feature": ["enhancement"],
+    "feedback": ["question"],
+}
+
+
+def _create_github_issue(report: dict) -> list[str]:
+    """Create a GitHub issue in every configured repo whose token allows it.
+
+    Returns a list of the issue URLs that were actually created (empty when
+    the integration is not configured or every repo rejected the token).
+    """
+    import httpx
+    from config import GITHUB_TOKEN, GITHUB_REPOS
+
+    if not GITHUB_TOKEN:
+        return []
+
+    title = (report.get("title") or "").strip() or (report.get("message") or "")[:60]
+    labels = list(_REPORT_TYPE_LABELS.get(report.get("type", "bug"), ["bug"]))
+
+    sections = []
+    if report.get("message"):
+        sections.append(report["message"].strip())
+    if report.get("steps"):
+        sections.append(f"**Steps to reproduce:**\n\n{report['steps'].strip()}")
+    if report.get("expected"):
+        sections.append(f"**Expected behavior:**\n\n{report['expected'].strip()}")
+    if report.get("actual"):
+        sections.append(f"**Actual behavior:**\n\n{report['actual'].strip()}")
+    sections.append(
+        "---\n"
+        f"_Reported via the in-app report form._\n\n"
+        f"- **Type:** `{report.get('type', 'bug')}`\n"
+        f"- **User:** `{report.get('user_id') or 'anonymous'}`\n"
+        f"- **Job:** `{report.get('job_id') or '-'}`\n"
+        f"- **Clip:** `{report.get('clip_id') or '-'}`"
+    )
+
+    body = "\n\n".join(sections)
+    created: list[str] = []
+    for repo in GITHUB_REPOS:
+        try:
+            resp = httpx.post(
+                f"https://api.github.com/repos/{repo}/issues",
+                headers={
+                    "Authorization": f"Bearer {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                json={"title": title, "body": body, "labels": labels},
+                timeout=20,
+            )
+            resp.raise_for_status()
+            created.append(resp.json().get("html_url"))
+        except Exception:
+            # token may not have access to this repo; try the next one
+            continue
+    return created
 
 
 @router.post('/report')
 async def report_issue(request: Request, job_id: str | None = None, clip_id: int | None = None, message: str | None = None):
-    """Accept user-submitted reports/feedback and store them locally.
+    """Accept user-submitted reports/feedback.
 
-    This is intentionally simple: reports are written to the backend `TEMP_DIR`
-    as JSON files for later inspection. In production you'd forward these to
-    logging/issue trackers or a support inbox.
+    Reports are saved locally, optionally emailed to support, and — when
+    ``GITHUB_TOKEN`` is configured — created directly as a GitHub issue so
+    maintainers see them without a separate sync step.
     """
     user = get_current_user(request)
     user_id = user["id"] if user else None
@@ -54,12 +118,24 @@ async def report_issue(request: Request, job_id: str | None = None, clip_id: int
     except Exception:
         payload = {"message": message}
 
+    report_type = str(payload.get("type") or "bug").strip().lower()
+    if report_type not in _REPORT_TYPE_LABELS:
+        report_type = "bug"
+
     report = {
-        "job_id": job_id or payload.get("job_id"),
-        "clip_id": clip_id or payload.get("clip_id"),
-        "message": payload.get("message") if payload.get("message") is not None else message,
+        "type": report_type,
+        "title": (payload.get("title") or "").strip(),
+        "message": str(payload.get("message") if payload.get("message") is not None else message or "").strip(),
+        "steps": str(payload.get("steps") or "").strip(),
+        "expected": str(payload.get("expected") or "").strip(),
+        "actual": str(payload.get("actual") or "").strip(),
+        "job_id": payload.get("job_id") or job_id,
+        "clip_id": payload.get("clip_id") or clip_id,
         "user_id": user_id,
     }
+
+    if not report["title"] and not report["message"]:
+        raise HTTPException(status_code=400, detail="Report needs a title or a message")
 
     try:
         import json, time
@@ -67,6 +143,16 @@ async def report_issue(request: Request, job_id: str | None = None, clip_id: int
         fname.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     except Exception:
         raise HTTPException(status_code=500, detail="Could not save report")
+
+    # Create GitHub issues when the integration is configured
+    issue_urls: list[str] = []
+    try:
+        issue_urls = _create_github_issue(report)
+    except Exception:
+        issue_urls = []
+
+    # Record the report into analytics (no-op when DB not configured).
+    db.record_event(user_id, "report_submitted", {"type": report_type, "created_issue": bool(issue_urls)})
 
     # Attempt to send an email to support if SMTP is configured
     try:
@@ -98,7 +184,11 @@ async def report_issue(request: Request, job_id: str | None = None, clip_id: int
     except Exception:
         pass
 
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "issue_url": issue_urls[0] if issue_urls else None,
+        "issue_urls": issue_urls,
+    }
 
 
 
@@ -125,6 +215,22 @@ async def health_check():
         "gemini_configured": bool(GEMINI_API_KEY),
         "nvidia_configured": bool(NVIDIA_API_KEY),
     }
+
+
+@router.post("/track")
+async def track_event(request: Request, body: dict | None = None):
+    """Record a user behavior event (fire-and-forget, no-op when DB is off)."""
+    user = get_current_user(request)
+    user_id = user["id"] if user else None
+    body = body or {}
+    name = str(body.get("event") or body.get("name") or "").strip()
+    if not name or len(name) > 100:
+        raise HTTPException(status_code=400, detail="Event name required")
+    props = body.get("properties") or {}
+    if not isinstance(props, dict):
+        props = {}
+    db.record_event(user_id, name, props)
+    return {"status": "ok"}
 
 
 @router.get("/config")
@@ -171,6 +277,7 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
         video_title=file.filename,
         user_id=user_id,
     )
+    db.record_event(user_id, "job_uploaded", {"job_id": job_id, "filename": file.filename})
 
     return UploadResponse(
         job_id=job_id,
@@ -198,6 +305,7 @@ async def submit_youtube_url(req: Request, request: YouTubeRequest):
         video_title="YouTube Video",
         user_id=user_id,
     )
+    db.record_event(user_id, "job_youtube", {"job_id": job_id, "url": url})
 
     return UploadResponse(
         job_id=job_id,
@@ -229,8 +337,75 @@ async def start_processing(request: Request, job_id: str):
     # Launch pipeline as a background task. The transcription service will
     # use the local model when available and fall back to Gemini otherwise.
     asyncio.create_task(run_pipeline(job_id, whisper_model))
+    db.record_event(user_id, "job_started", {"job_id": job_id})
 
     return {"message": "Processing started", "job_id": job_id}
+
+
+# --- External download worker ---
+# The server's Azure IP is flagged by Google, so some videos hit the "Sign in
+# to confirm you're not a bot" wall. Those jobs are parked in WAITING_WORKER
+# and picked up by an external downloader running on an unflagged IP (see
+# worker_downloader.py). It downloads the video and uploads it back here.
+def _require_worker(request: Request) -> None:
+    token = request.headers.get("X-Worker-Token", "")
+    if not WORKER_TOKEN or token != WORKER_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid worker token")
+
+
+@router.get("/worker/pending")
+async def worker_pending(request: Request):
+    """List YouTube jobs waiting for the external download worker."""
+    _require_worker(request)
+    pending = [
+        {
+            "job_id": jid,
+            "youtube_url": job["youtube_url"],
+            "video_title": job.get("video_title", ""),
+            "created_at": job.get("created_at"),
+        }
+        for jid, job in jobs.items()
+        if job.get("source_type") == "youtube"
+        and job.get("status") == JobStatus.WAITING_WORKER
+        and job.get("youtube_url")
+    ]
+    return {"jobs": pending}
+
+
+@router.post("/worker/upload/{job_id}")
+async def worker_upload(request: Request, job_id: str, file: UploadFile = File(...)):
+    """Accept the video uploaded by the external worker and resume the pipeline."""
+    _require_worker(request)
+
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.get("source_type") != "youtube":
+        raise HTTPException(status_code=400, detail="Not a YouTube job")
+    if job.get("status") != JobStatus.WAITING_WORKER:
+        raise HTTPException(status_code=400, detail="Job is not waiting for a worker download")
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    dest = UPLOAD_DIR / f"{job_id}.mp4"
+    with dest.open("wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk)
+
+    size_mb = round(dest.stat().st_size / (1024 * 1024), 1)
+    if size_mb <= 0:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+    title = file.filename or None
+    mark_video_uploaded(job_id, dest, title)
+
+    from main import whisper_model
+    asyncio.create_task(run_pipeline(job_id, whisper_model))
+    db.record_event(None, "worker_video_uploaded", {"job_id": job_id, "size_mb": size_mb})
+
+    return {"message": "Video received; pipeline resuming", "job_id": job_id, "size_mb": size_mb}
 
 
 @router.get("/status/{job_id}", response_model=ProcessingStatus)

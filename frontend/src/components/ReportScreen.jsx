@@ -1,47 +1,177 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
+import { submitReport } from '../lib/api';
+
+const REPORT_TYPES = [
+    { id: 'bug', label: '🐛 Bug report', hint: 'Something is broken or misbehaving' },
+    { id: 'feature', label: '✨ Feature request', hint: 'Something you wish Clipo could do' },
+    { id: 'feedback', label: '💬 Feedback', hint: 'General thoughts, ideas, or praise' },
+];
 
 export default function ReportScreen() {
+    const [type, setType] = useState('bug');
+    const [title, setTitle] = useState('');
     const [message, setMessage] = useState('');
-    const [sent, setSent] = useState(false);
+    const [steps, setSteps] = useState('');
+    const [expected, setExpected] = useState('');
+    const [actual, setActual] = useState('');
+    const [status, setStatus] = useState('editing'); // editing | submitting | sent | error
+    const [issueUrls, setIssueUrls] = useState([]);
+    const [error, setError] = useState('');
     const navigate = useNavigate();
 
+    const valid = title.trim() || message.trim();
+
     const submit = async () => {
+        setStatus('submitting');
+        setError('');
         try {
-            await fetch('/api/report', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message }),
+            const res = await submitReport({
+                type,
+                title: title.trim(),
+                message: message.trim(),
+                steps: steps.trim(),
+                expected: expected.trim(),
+                actual: actual.trim(),
             });
-            setSent(true);
+            const urls = Array.isArray(res.issue_urls) && res.issue_urls.length
+                ? res.issue_urls
+                : (res.issue_url ? [res.issue_url] : []);
+            setIssueUrls(urls);
+            setStatus('sent');
         } catch (err) {
-            setSent(true);
+            setStatus('error');
+            setError(err.message || 'Something went wrong sending your report.');
         }
     };
+
+    if (status === 'sent') {
+        return (
+            <div className="report-page">
+                <div className="report-frame">
+                    <header className="report-header">
+                        <h1>Report submitted</h1>
+                    </header>
+                    <div className="report-body">
+                        <div className="report-sent">
+                            <h3>Thanks for reporting</h3>
+                            <p>We received your {type} report and will review it shortly.</p>
+                            {issueUrls.length > 0 && (
+                                <p className="report-issue-link">
+                                    {issueUrls.length === 1
+                                        ? 'It was filed as a GitHub issue — '
+                                        : `It was filed as ${issueUrls.length} GitHub issues — `}
+                                    {issueUrls.map((u, i) => (
+                                        <span key={u}>
+                                            <a href={u} target="_blank" rel="noopener noreferrer">track it here</a>
+                                            {i < issueUrls.length - 1 ? ' · ' : ''}
+                                        </span>
+                                    ))}
+                                    .
+                                </p>
+                            )}
+                            <div className="report-actions">
+                                <button className="ghost" onClick={() => navigate(-1)}>Back</button>
+                                <button className="results-primary" onClick={() => navigate('/')}>Back to home</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="report-page">
             <div className="report-frame">
                 <header className="report-header">
                     <button className="ghost" onClick={() => navigate(-1)}>← Back</button>
-                    <h1>Report an issue</h1>
+                    <h1>Send feedback</h1>
                 </header>
                 <div className="report-body">
-                    {!sent ? (
+                    <p>Tell us what went wrong or how we can improve — reports go straight to the maintainers.</p>
+
+                    <div className="report-types" role="group" aria-label="Report type">
+                        {REPORT_TYPES.map((t) => (
+                            <button
+                                key={t.id}
+                                type="button"
+                                className={`report-type${type === t.id ? ' active' : ''}`}
+                                onClick={() => setType(t.id)}
+                            >
+                                <span className="report-type-label">{t.label}</span>
+                                <span className="report-type-hint">{t.hint}</span>
+                            </button>
+                        ))}
+                    </div>
+
+                    <label className="report-field">
+                        <span>Title</span>
+                        <input
+                            type="text"
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder={type === 'feature' ? 'e.g. Support landscape mode in the player' : 'e.g. Captions burn onto the wrong frame'}
+                        />
+                    </label>
+
+                    <label className="report-field">
+                        <span>Description</span>
+                        <textarea
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            placeholder="Describe what happened or what you'd like to see..."
+                        />
+                    </label>
+
+                    {type === 'bug' && (
                         <>
-                            <p>Tell us what went wrong or how we can improve. Your report helps us make Clipo better.</p>
-                            <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Describe the issue..." />
-                            <div className="report-actions">
-                                <button className="results-quiet" onClick={() => navigate(-1)}>Cancel</button>
-                                <button className="results-primary" onClick={submit} disabled={!message.trim()}>Send report</button>
+                            <label className="report-field">
+                                <span>Steps to reproduce <em className="report-opt">(optional)</em></span>
+                                <textarea
+                                    className="report-small"
+                                    value={steps}
+                                    onChange={(e) => setSteps(e.target.value)}
+                                    placeholder="1. Upload a video\n2. Pick the Neon style\n3. ..."
+                                />
+                            </label>
+                            <div className="report-row">
+                                <label className="report-field">
+                                    <span>Expected <em className="report-opt">(optional)</em></span>
+                                    <textarea
+                                        className="report-small"
+                                        value={expected}
+                                        onChange={(e) => setExpected(e.target.value)}
+                                        placeholder="What should have happened?"
+                                    />
+                                </label>
+                                <label className="report-field">
+                                    <span>Actual <em className="report-opt">(optional)</em></span>
+                                    <textarea
+                                        className="report-small"
+                                        value={actual}
+                                        onChange={(e) => setActual(e.target.value)}
+                                        placeholder="What actually happened?"
+                                    />
+                                </label>
                             </div>
                         </>
-                    ) : (
-                        <div className="report-sent">
-                            <h3>Thanks — report submitted</h3>
-                            <p>We received your message and will review it shortly.</p>
-                            <button className="results-primary" onClick={() => navigate('/')}>Back to home</button>
-                        </div>
                     )}
+
+                    {status === 'error' && (
+                        <p className="report-error">⚠ {error}</p>
+                    )}
+
+                    <div className="report-actions">
+                        <button className="results-quiet" onClick={() => navigate(-1)}>Cancel</button>
+                        <button
+                            className="results-primary"
+                            onClick={submit}
+                            disabled={!valid || status === 'submitting'}
+                        >
+                            {status === 'submitting' ? 'Sending…' : 'Send report'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

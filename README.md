@@ -6,8 +6,19 @@ Clipo is a local-first AI clip studio that ingests long-form video — uploaded 
 
 ---
 
+## Star History
+
+![Star History Chart](images/star-history.svg)
+
+> Give the repo a ⭐ if you find it useful — it fuels development and shows other creators what's possible.
+
+> ⭐ Track the full growth timeline on [Star History](https://star-history.com/#SACHINN122/Clipo&Date).
+
+---
+
 ## Table of Contents
 
+- [Star History](#star-history)
 - [Architecture](#architecture)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
@@ -22,6 +33,7 @@ Clipo is a local-first AI clip studio that ingests long-form video — uploaded 
 - [Environment Variables](#environment-variables)
 - [GPU / CUDA Setup](#gpu--cuda-setup)
 - [Troubleshooting](#troubleshooting)
+- [Contributing](CONTRIBUTING.md)
 
 ---
 
@@ -85,6 +97,8 @@ graph TB
 | **Whisper transcription** | Local speech-to-text with word-level timestamps (Faster Whisper) |
 | **AI moment detection** | Gemini or NVIDIA NIM finds hooks, stories, insights, and emotional beats |
 | **Auto clip generation** | FFmpeg cuts and exports the best moments as short clips |
+| **AI clip metrics** | Every clip scored on hook strength, quality score, and engagement prediction (old jobs fall back to "Not available") |
+| **Completion alerts** | Desktop notification plus an audio chime when a job finishes — works even in a background tab |
 | **Caption Studio** | Interactive phone preview with styled presets: Classic, Neon, Bold, Minimal |
 | **Google OAuth** | One-click Google login, JWT session cookie |
 | **Job library** | Track, revisit, and manage all past jobs from a central library |
@@ -483,7 +497,8 @@ clipo/
 │   │   ├── lib/
 │   │   │   ├── api.js               # API client (fetch + error handling)
 │   │   │   ├── auth.js              # OAuth helpers
-│   │   │   └── notifications.js     # Browser notification API
+│   │   │   ├── notifications.js     # Browser notification API
+│   │   │   └── sound.js             # Web Audio unlock + completion chime
 │   │   ├── App.jsx                   # Screen router + state
 │   │   ├── main.jsx                  # React root
 │   │   └── index.css                 # Tailwind + custom styles
@@ -729,6 +744,25 @@ Jobs are held in-memory. Restarting the backend clears all job state. For persis
 
 ---
 
+## Contributors
+
+<!-- CONTRIBUTORS:START -->
+Made with care by:
+
+```mermaid
+pie showData title Commit share (129 total)
+    "Vicky Kumar" : 74
+    "SACHIN PRAJAPATI" : 55
+```
+
+| Contributor | Role |
+| :--- | :--- |
+| [![Vicky Kumar](https://github.com/FiscalMindset.png?size=28)](https://github.com/FiscalMindset) **Vicky Kumar** — [@FiscalMindset](https://github.com/FiscalMindset) | Co-developer |
+| [![SACHIN PRAJAPATI](https://github.com/SACHINN122.png?size=28)](https://github.com/SACHINN122) **SACHIN PRAJAPATI** — [@SACHINN122](https://github.com/SACHINN122) | Creator |
+<!-- CONTRIBUTORS:END -->
+
+---
+
 ## Notes
 
 - This project is intended for **local development and personal use**
@@ -738,4 +772,4 @@ Jobs are held in-memory. Restarting the backend clears all job state. For persis
 
 ---
 
-**Made with care — [SACHINN122](https://github.com/SACHINN122)**
+**Made with care by [SACHIN PRAJAPATI](https://github.com/SACHINN122) & [Vicky Kumar](https://github.com/FiscalMindset)**

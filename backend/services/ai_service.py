@@ -25,6 +25,7 @@ from config import (
     MAX_CLIP_DURATION,
 )
 from models.schemas import ClipTimestamp, AIUsageInfo
+from services.gemini_keys import next_key, mark_rate_limited, is_rate_limited_error
 
 
 SYSTEM_PROMPT = """You are an expert video editor and content strategist. Your job is to analyze a video transcript and identify the most engaging, interesting, and shareable moments that would make great short-form clips (like YouTube Shorts, Instagram Reels, or TikTok).
@@ -139,21 +140,24 @@ async def _detect_clips_gemini(
     on_retry: Callable[[str], None] | None,
 ) -> tuple[list[ClipTimestamp], AIUsageInfo]:
     """Detect clips using Gemini, with retry logic. Returns (clips, usage)."""
-    client = genai.Client(api_key=GEMINI_API_KEY)
     usage = AIUsageInfo(provider="gemini", model=GEMINI_MODEL)
 
     system_token_est = _estimate_tokens(system_instruction)
     user_token_est = _estimate_tokens(user_prompt)
     usage.prompt_tokens_est = system_token_est + user_token_est
-    usage.reason = f"Gemini analyzed transcript for best moments"
+    usage.reason = "Gemini analyzed transcript for best moments"
 
     for retry_number in range(GEMINI_MAX_RETRIES + 1):
+        api_key = next_key() or GEMINI_API_KEY
+        client = genai.Client(api_key=api_key)
         try:
             response = await asyncio.to_thread(
                 _request_clips_sync, client, user_prompt, system_instruction
             )
             break
         except Exception as error:
+            if is_rate_limited_error(error):
+                mark_rate_limited(api_key)
             if not _is_transient_gemini_error(error) or retry_number >= GEMINI_MAX_RETRIES:
                 raise
 

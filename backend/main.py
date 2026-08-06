@@ -30,6 +30,9 @@ from fastapi.staticfiles import StaticFiles
 from config import CLIP_DIR, FRONTEND_URLS, GEMINI_API_KEY
 from routes.api import router as api_router
 from routes.auth import router as auth_router
+from routes.admin import router as admin_router
+from services import db
+from services import telemetry
 from services.transcription_service import load_local_whisper_model
 
 
@@ -64,6 +67,14 @@ async def lifespan(app: FastAPI):
 
     print(f"ffmpeg found: {shutil.which('ffmpeg')}")
 
+    # Initialize Postgres analytics (no-op when DATABASE_URL is not set).
+    db.init_db()
+
+    # Start telemetry: background buffered writer + request middleware + logging.
+    telemetry.start()
+    telemetry.attach_logging_handler()
+    print(f"Telemetry backend: {telemetry.BACKEND.get('backend_id')}")
+
     # Validate required API keys
     if not GEMINI_API_KEY:
         print("=" * 60)
@@ -82,6 +93,7 @@ async def lifespan(app: FastAPI):
 
     # Cleanup
     print("Shutting down...")
+    telemetry.flush()
     whisper_model = None
 
 
@@ -113,9 +125,21 @@ app.add_middleware(
 CLIP_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static/clips", StaticFiles(directory=str(CLIP_DIR)), name="clips")
 
+# Admin SPA (zero-build static app)
+_ADMIN_APP = Path(__file__).parent / "admin_app"
+app.mount("/admin/app", StaticFiles(directory=str(_ADMIN_APP), html=True), name="admin_app")
+
+
+@app.middleware("http")
+async def telemetry_http(request, call_next):
+    """Trace every request (frontend origin, backend id, IP, UA, timing)."""
+    return await telemetry.request_middleware(request, call_next)
+
+
 # Register API routes
 app.include_router(auth_router)
 app.include_router(api_router)
+app.include_router(admin_router)
 
 
 @app.get("/")

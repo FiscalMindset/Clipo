@@ -5,6 +5,7 @@ Manages job state and coordinates all services.
 
 import asyncio
 import json
+import re
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import Any
 
 from config import AUDIO_DIR
 from models.schemas import JobStatus, StepInfo, AIUsageInfo
+from services import db
 from services.audio_service import extract_audio
 from services.transcription_service import transcribe
 from services.ai_service import detect_clips
@@ -38,7 +40,35 @@ def _load_jobs() -> None:
             jobs.update(stored)
 
 
+def _mask_secrets(text: str | None) -> str | None:
+    """Redact API keys from an error message before it reaches the frontend.
+
+    Google's error messages echo the caller's API key verbatim (api_key:...),
+    so raw provider errors must never be stored or returned as-is.
+    """
+    if not text:
+        return text
+    s = str(text)
+
+    # Mask any configured keys first (exact match beats pattern guessing).
+    try:
+        from config import GEMINI_API_KEY, NVIDIA_API_KEY
+    except Exception:
+        GEMINI_API_KEY = NVIDIA_API_KEY = ""
+    for raw in (GEMINI_API_KEY, NVIDIA_API_KEY):
+        for key in (k.strip() for k in raw.split(",") if k.strip()):
+            if key:
+                s = s.replace(key, "***")
+
+    # Then catch any other key-shaped secrets Google or a provider might echo.
+    s = re.sub(r"(api_key[:=]\s*)[A-Za-z0-9_.\-]+", r"\1***", s)
+    s = re.sub(r"AIza[0-9A-Za-z_\-]{20,}", "AIza***", s)
+    s = re.sub(r"\bAQ\.[A-Za-z0-9_.\-]{20,}", "AQ.***", s)
+    return s
+
+
 _load_jobs()
+db.sync_all_jobs(jobs)
 
 
 def create_job(job_id: str, source_type: str, **kwargs) -> dict:
@@ -61,6 +91,7 @@ def create_job(job_id: str, source_type: str, **kwargs) -> dict:
     }
     jobs[job_id] = job
     _save_jobs()
+    db.sync_job(job)
     return job
 
 
@@ -99,6 +130,32 @@ def get_job(job_id: str) -> dict | None:
     return jobs.get(job_id)
 
 
+def mark_video_uploaded(job_id: str, path: Path, title: str | None = None) -> dict:
+    """Record that the external worker uploaded the video and resume the pipeline.
+
+    Called by the worker upload endpoint. The job is moved back to PENDING so
+    the next ``run_pipeline`` pass picks up the file (its download step is
+    skipped because ``video_path`` now exists).
+    """
+    job = jobs.get(job_id)
+    if not job:
+        raise KeyError(job_id)
+    job["video_path"] = str(path)
+    if title:
+        job["video_title"] = title
+    job["status"] = JobStatus.PENDING
+    job["current_step"] = "Waiting"
+    job["error"] = None
+    for step in job["steps"]:
+        if step["name"] == "Downloading Video":
+            step["status"] = "pending"
+            step["message"] = "Video uploaded by external worker — resuming pipeline."
+            break
+    _save_jobs()
+    db.sync_job(job)
+    return job
+
+
 def get_user_jobs(user_id: str | None) -> list[str]:
     """Get job IDs for a user. If user_id is None, return all jobs."""
     if user_id is None:
@@ -116,7 +173,7 @@ def get_processing_status(job_id: str) -> dict | None:
         "status": job["status"],
         "current_step": job["current_step"],
         "steps": [StepInfo(**s) for s in job["steps"]],
-        "error": job["error"],
+        "error": _mask_secrets(job["error"]),
         "video_title": job["video_title"],
         "source_type": job["source_type"],
         "created_at": job["created_at"],
@@ -147,13 +204,41 @@ async def run_pipeline(job_id: str, whisper_model: Any):
             job["status"] = JobStatus.DOWNLOADING
             _update_step(job, "Downloading Video", "running", "Connecting to YouTube...")
 
-            video_path, title = await download_video(job["youtube_url"], job_id)
-            job["video_path"] = str(video_path)
-            job["video_title"] = title
+            existing = job.get("video_path")
+            if existing and Path(existing).exists():
+                # Resume path: the external download worker already uploaded the
+                # video, so skip the (IP-blocked) server-side download.
+                video_path = Path(existing)
+                title = job.get("video_title") or "YouTube Video"
+                file_size_mb = video_path.stat().st_size / (1024 * 1024) if video_path.exists() else 0
+                _update_step(job, "Downloading Video", "completed",
+                             f"Video ready ({file_size_mb:.1f} MB, downloaded by worker)")
+            else:
+                try:
+                    video_path, title = await download_video(job["youtube_url"], job_id)
+                    job["video_path"] = str(video_path)
+                    job["video_title"] = title
 
-            file_size_mb = video_path.stat().st_size / (1024 * 1024) if video_path.exists() else 0
-            _update_step(job, "Downloading Video", "completed",
-                         f"Downloaded {title} ({file_size_mb:.1f} MB)")
+                    file_size_mb = video_path.stat().st_size / (1024 * 1024) if video_path.exists() else 0
+                    _update_step(job, "Downloading Video", "completed",
+                                 f"Downloaded {title} ({file_size_mb:.1f} MB)")
+                except RuntimeError as exc:
+                    from config import WORKER_TOKEN
+                    from services.youtube_service import is_bot_wall
+                    if WORKER_TOKEN and is_bot_wall(str(exc)):
+                        # Server IP is flagged by Google — hand the download to
+                        # the external worker and pause until it uploads.
+                        job["status"] = JobStatus.WAITING_WORKER
+                        _update_step(
+                            job, "Downloading Video", "running",
+                            "YouTube's bot check blocked the server IP — handed off to the "
+                            "external download worker. The job resumes automatically once the "
+                            "video is uploaded."
+                        )
+                        _save_jobs()
+                        db.sync_job(job)
+                        return
+                    raise
 
         video_path = Path(job["video_path"])
 
@@ -199,6 +284,7 @@ async def run_pipeline(job_id: str, whisper_model: Any):
                     step["message"] = job["error"]
                     break
             _save_jobs()
+            db.sync_job(job)
             return
 
         _update_step(
@@ -266,6 +352,7 @@ async def run_pipeline(job_id: str, whisper_model: Any):
         job["current_step"] = "Complete"
 
         _save_jobs()
+        db.sync_job(job)
 
         # --- Cleanup: remove temporary audio file ---
         try:
@@ -275,15 +362,16 @@ async def run_pipeline(job_id: str, whisper_model: Any):
 
     except Exception as e:
         job["status"] = JobStatus.FAILED
-        job["error"] = str(e)
+        job["error"] = _mask_secrets(str(e))
         job["current_step"] = "Failed"
 
         # Mark current running step as failed
         for step in job["steps"]:
             if step["status"] == "running":
                 step["status"] = "failed"
-                step["message"] = str(e)
+                step["message"] = _mask_secrets(str(e))
                 break
 
         _save_jobs()
+        db.sync_job(job)
         traceback.print_exc()

@@ -15,6 +15,7 @@ from google.genai import types
 
 from config import GEMINI_API_KEY, GEMINI_MODEL, TRANSCRIPT_DIR, WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER_MODEL
 from models.schemas import TranscriptResponse
+from services.gemini_keys import next_key, mark_rate_limited, is_rate_limited_error
 
 
 def _transcribe_sync(audio_path: str, model: Any) -> dict:
@@ -105,13 +106,13 @@ def load_local_whisper_model() -> Any | None:
     return None
 
 
-def _transcribe_with_gemini_sync(audio_path: Path, job_id: str) -> dict:
-    if not GEMINI_API_KEY:
+def _transcribe_with_gemini_sync(audio_path: Path, job_id: str, api_key: str) -> dict:
+    if not api_key:
         raise RuntimeError(
             "Local Whisper is unavailable on this machine and GEMINI_API_KEY is not set."
         )
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    client = genai.Client(api_key=api_key)
     duration = _audio_duration_seconds(audio_path)
 
     uploaded = client.files.upload(file=audio_path, config={"mime_type": "audio/wav"})
@@ -191,10 +192,26 @@ async def transcribe(audio_path: Path, model: Any | None, job_id: str) -> dict:
             functools.partial(_transcribe_sync, str(audio_path), model),
         )
     else:
-        result = await loop.run_in_executor(
-            None,
-            functools.partial(_transcribe_with_gemini_sync, audio_path, job_id),
-        )
+        # Gemini fallback. Upload + generate must use the same key, so rotate at
+        # the whole-operation level: on rate limit, mark the key and retry with a
+        # different one.
+        last_error: Exception | None = None
+        for _ in range(4):
+            api_key = next_key() or GEMINI_API_KEY
+            try:
+                result = await loop.run_in_executor(
+                    None,
+                    functools.partial(_transcribe_with_gemini_sync, audio_path, job_id, api_key),
+                )
+                break
+            except Exception as error:
+                last_error = error
+                if is_rate_limited_error(error):
+                    mark_rate_limited(api_key)
+                    continue
+                raise
+        else:
+            raise last_error
 
     # Save transcript to disk
     transcript_path = TRANSCRIPT_DIR / f"{job_id}_transcript.json"

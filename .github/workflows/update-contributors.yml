@@ -1,0 +1,49 @@
+name: Update contributor stats
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: contributor-stats
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Regenerate Contributors block
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python .github/scripts/update_contributors.py
+
+      - name: Regenerate Star History chart
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python .github/scripts/update_star_history.py
+
+      - name: Commit if changed
+        if: github.repository == 'SACHINN122/Clipo'
+        run: |
+          git add README.md images/star-history.svg
+          if git diff --cached --quiet; then
+            echo "no changes; nothing to commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "docs(readme): auto-update contributor stats and star history"
+            git push
+          fi

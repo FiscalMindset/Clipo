@@ -1,0 +1,49 @@
+name: Sync main to fork
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-fork
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      HAS_FORK_TOKEN: ${{ secrets.FORK_PUSH_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          # Don't inject the GITHUB_TOKEN Authorization header into this
+          # checkout. With persist-credentials: true, actions/checkout sets a
+          # global http.extraheader that shadows the FORK_PUSH_TOKEN URL
+          # credentials on push, which makes GitHub attribute the push to
+          # github-actions[bot] and deny it with a 403.
+          persist-credentials: false
+
+      # Mirror origin main onto FiscalMindset/Clipo (the fork) so the Render
+      # static site clipo-6bfs.onrender.com, which auto-deploys from the fork,
+      # always stays current. Prefer a fast-forward push so Render's auto-deploy
+      # webhook fires normally; fall back to force only if the fork diverged.
+      - name: Push main to FiscalMindset/Clipo
+        if: env.HAS_FORK_TOKEN == 'true'
+        env:
+          FORK_TOKEN: ${{ secrets.FORK_PUSH_TOKEN }}
+        run: |
+          case "${FORK_TOKEN:0:10}" in
+            ghs_*)        echo "TOKEN_KIND=GITHUB_TOKEN (WRONG: this is the Actions bot token, cannot push to the fork)" ;;
+            ghp_*)        echo "TOKEN_KIND=classicPAT (ok)" ;;
+            github_pat*)  echo "TOKEN_KIND=fine-grainedPAT (ok)" ;;
+            *)            echo "TOKEN_KIND=unknown-prefix ${FORK_TOKEN:0:4}..." ;;
+          esac
+          git remote add fork "https://x-access-token:${FORK_TOKEN}@github.com/FiscalMindset/Clipo.git"
+          git push fork main:main 2>/dev/null && echo "pushed (fast-forward)" \
+            || { echo "fast-forward rejected; forcing mirror update"; git push -f fork main:main; }

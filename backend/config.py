@@ -6,6 +6,7 @@ Reads settings from environment variables / .env file.
 import base64
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -38,7 +39,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 load_dotenv(BACKEND_DIR / ".env", override=True)
 
 # --- Directory Paths ---
-UPLOAD_DIR = PROJECT_ROOT / "uploads"
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(PROJECT_ROOT / "uploads")))
 AUDIO_DIR = PROJECT_ROOT / "audio"
 TRANSCRIPT_DIR = PROJECT_ROOT / "transcripts"
 CLIP_DIR = PROJECT_ROOT / "clips"
@@ -78,6 +79,13 @@ MAX_CLIP_DURATION = 120  # seconds
 TARGET_CLIP_MIN = 5
 TARGET_CLIP_MAX = 20
 
+# --- Supabase Sync ---
+# The backend mirrors newly authenticated users into Supabase so the project
+# can show real login activity there without changing the existing auth flow.
+SUPABASE_URL = os.getenv("SUPABASE_URL", os.getenv("VITE_SUPABASE_URL", ""))
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", os.getenv("VITE_SUPABASE_PUBLISHABLE_KEY", ""))
+SUPABASE_USERS_TABLE = os.getenv("SUPABASE_USERS_TABLE", "clipo_users")
+
 # --- Caption Constraints ---
 MAX_CAPTION_WORDS = 10   # max words shown on screen at once (sliding window)
 
@@ -88,6 +96,23 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi"}
 
 # --- YouTube Constraints ---
 MAX_YOUTUBE_DURATION = 3 * 60 * 60  # 3 hours in seconds
+
+# --- YouTube PO token provider (bgutil) ---
+# The container ships a small HTTP server (bgutil-ytdlp-pot-provider) that
+# mints proof-of-origin tokens. yt-dlp attaches one to the `web` player so it
+# can fetch even when YouTube flags the datacenter IP with the "Sign in to
+# confirm you're not a bot" wall. Point this at the local server (default) or
+# a remote one; set empty to disable the PO-token strategies entirely.
+POT_PROVIDER_BASE_URL = os.getenv("POT_PROVIDER_BASE_URL", "http://127.0.0.1:4416").strip()
+
+# --- External download worker ---
+# When set, YouTube jobs that hit Google's "Sign in to confirm you're not a
+# bot" wall on this server's IP are parked in WAITING_WORKER state and handed
+# off to an external downloader (run on an unflagged IP, e.g. the operator's
+# home machine via worker_downloader.py). The worker downloads the video and
+# uploads it back through /api/worker/upload, after which the pipeline resumes
+# server-side. When empty, the handoff is disabled and such jobs fail as before.
+WORKER_TOKEN = os.getenv("WORKER_TOKEN", "").strip()
 
 # Optional cookies file (Netscape format) exported from your browser with a
 # "Get cookies.txt" extension. This is the most reliable way to bypass
@@ -104,7 +129,9 @@ MAX_YOUTUBE_DURATION = 3 * 60 * 60  # 3 hours in seconds
 def _resolve_youtube_cookies() -> str:
     file_path = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
     if file_path:
-        return file_path
+        if Path(file_path).is_file() and Path(file_path).stat().st_size > 0:
+            return file_path
+        return ""
 
     cookies_b64 = os.getenv("YOUTUBE_COOKIES_B64", "")
     cookies_content = os.getenv("YOUTUBE_COOKIES", "")
@@ -160,3 +187,79 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "")
+
+# --- GitHub issue integration (in-app reports become issues) ---
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+# Comma-separated list of "owner/repo" pairs; an issue is created in each repo
+# whose token allows it, so both a fork and the upstream can be targeted.
+GITHUB_REPO = os.getenv("GITHUB_REPO", "SACHINN122/Clipo")
+GITHUB_REPOS = [r.strip() for r in GITHUB_REPO.split(",") if r.strip()] or ["SACHINN122/Clipo"]
+
+# --- PostgreSQL analytics / persistence ---
+# Full connection string wins if provided; otherwise it is assembled from the
+# DB_* vars. Empty DATABASE_URL disables the DB layer (all DB calls become
+# no-ops) so the app still runs locally without Postgres.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    _db_user = os.getenv("DB_USER", "")
+    _db_pass = os.getenv("DB_PASSWORD", "")
+    _db_host = os.getenv("DB_HOST", "")
+    _db_name = os.getenv("DB_NAME", "")
+    _db_port = os.getenv("DB_PORT", "5432")
+    if _db_user and _db_pass and _db_host and _db_name:
+        DATABASE_URL = (
+            f"postgresql://{_db_user}:{_db_pass}@{_db_host}:{_db_port}/{_db_name}?sslmode=require"
+        )
+
+# Admin panel credentials (seeded into the DB on first run).
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "FiscalMindset")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Iit7065@")
+# Comma-separated list of admin GitHub usernames allowed to log in.
+ADMIN_USERNAMES = [u.strip() for u in os.getenv("ADMIN_USERNAMES", "FiscalMindset,SACHINN122").split(",") if u.strip()]
+
+# --- Backend identity & telemetry ---
+# Each deployment must have a stable BACKEND_ID so telemetry can attribute
+# requests/sessions/logs to the right backend. INSTANCE_ID distinguishes
+# individual pods/replicas within the same backend.
+BACKEND_ID = os.getenv("BACKEND_ID", "").strip()
+if not BACKEND_ID:
+    # Auto-derive a stable id from the public backend URL when not set.
+    _auto_id = ""
+    for _candidate in (os.getenv("BACKEND_URL", ""), BACKEND_URL):
+        if _candidate and _candidate.startswith(("http://", "https://")):
+            _auto_id = _candidate.split("//", 1)[1].split("/", 1)[0].replace(":", "-")
+            break
+    BACKEND_ID = _auto_id or "local-dev"
+BACKEND_NAME = os.getenv("BACKEND_NAME", BACKEND_ID)
+BACKEND_VERSION = os.getenv("BACKEND_VERSION", "1.0.0")
+BACKEND_REGION = os.getenv("BACKEND_REGION", "unknown")
+INSTANCE_ID = os.getenv("INSTANCE_ID", "") or uuid.uuid4().hex[:12]
+
+# When enabled, the app buffers request + server-log telemetry and flushes it
+# to Postgres in batches so analytics never blocks the request path.
+TELEMETRY_ENABLED = os.getenv("TELEMETRY_ENABLED", "true").lower() in ("1", "true", "yes")
+TELEMETRY_FLUSH_SECONDS = float(os.getenv("TELEMETRY_FLUSH_SECONDS", "5"))
+TELEMETRY_MAX_BUFFER = int(os.getenv("TELEMETRY_MAX_BUFFER", "500"))
+
+# Friendly display names for known frontends (origin -> name). Used by the
+# admin panel so "which frontend did this sign-in come from" is readable.
+FRONTEND_NAMES = {
+    "https://clipoai.onrender.com": "Render (origin)",
+    "https://clipo-6bfs.onrender.com": "Render (fork)",
+    "https://white-island-047e3ae00.7.azurestaticapps.net": "Azure SWA",
+    "http://localhost:5173": "Local dev",
+    "http://localhost:4173": "Local dev",
+    "http://localhost:5174": "Local dev",
+}
+for _extra in os.getenv("FRONTEND_NAME_MAP", "").split(","):
+    if "=" in _extra:
+        _k, _v = _extra.split("=", 1)
+        FRONTEND_NAMES[_k.strip()] = _v.strip()
+
+
+def frontend_name(origin: str) -> str:
+    """Return a friendly name for a frontend origin (falls back to the URL)."""
+    origin = (origin or "").strip()
+    if not origin:
+        return "unknown"
+    return FRONTEND_NAMES.get(origin, origin)
