@@ -8,17 +8,26 @@ import ClipoMark from './ClipoMark';
 const POLL_INTERVAL = 2000;
 
 const STEP_META = {
-  'Downloading Video':   { tone: 'cyan',   icon: 'arrow',  detail: 'Pulling the source from your upload or YouTube link.',           duration: 30,   capabilities: ['HTTP resume', 'YouTube'] },
-  'Extracting Audio':    { tone: 'violet', icon: 'wave',   detail: 'Separating the audio track from the video file at full quality.', duration: 20,   capabilities: ['FFmpeg'] },
-  'Transcribing Video':  { tone: 'violet', icon: 'wave',   detail: 'Converting speech to text with word-level timestamps using Whisper.', duration: 180, capabilities: ['Whisper', 'GPU'] },
-  'Finding Best Moments':{ tone: 'pink',   icon: 'spark',  detail: 'Identifying the most engaging clips with AI prompts.',          duration: 45,   capabilities: ['AI prompts', 'Ranking'] },
-  'Generating Clips':    { tone: 'amber',  icon: 'clip',   detail: 'Cutting and exporting each moment as a standalone clip.',      duration: 90,   capabilities: ['FFmpeg', 'Captions'] },
+  'Downloading Video':   { tone: 'cyan',   icon: 'arrow',  detail: 'Connecting to YouTube and downloading video.', capabilities: ['HTTP resume', 'YouTube'], pace: 40 },
+  'Extracting Audio':    { tone: 'violet', icon: 'wave',   detail: 'Extracting the audio track.',                capabilities: ['FFmpeg'], pace: 30 },
+  'Transcribing Video':  { tone: 'violet', icon: 'wave',   detail: 'Transcribing speech.',                       capabilities: ['Whisper', 'GPU'], pace: 210 },
+  'Finding Best Moments':{ tone: 'pink',   icon: 'spark',  detail: 'Analyzing transcript for viral moments.',    capabilities: ['AI prompts', 'Ranking'], pace: 70 },
+  'Generating Clips':    { tone: 'amber',  icon: 'clip',   detail: 'Rendering clips and preparing downloads.',   capabilities: ['FFmpeg', 'Captions'], pace: 120 },
 };
 
-const FALLBACK_META = { tone: 'violet', icon: 'spark', detail: 'Processing this step of your video pipeline.', duration: 60, capabilities: [] };
+const FALLBACK_META = { tone: 'violet', icon: 'spark', detail: 'Preparing your video for processing.', capabilities: [], pace: 60 };
 
 function getStepMeta(name) {
   return STEP_META[name] || FALLBACK_META;
+}
+
+// The API only reports step boundaries. This curve keeps the interface alive
+// between polls while reserving the final portion of every step for the API to
+// confirm. It asymptotically approaches 99%, so the UI can never claim a job
+// has completed before the backend does.
+function getInFlightProgress(elapsedMs, paceSeconds) {
+  const elapsedSeconds = elapsedMs / 1000;
+  return Math.min(99, 99 * (1 - Math.exp(-elapsedSeconds / paceSeconds)));
 }
 
 const ICON_PATHS = {
@@ -128,42 +137,19 @@ function ProgressRing({ progress, size = 152, stroke = 8 }) {
   );
 }
 
-function TimelineStep({ step, index, totalSteps, stepStartedAt }) {
+function TimelineStep({ step, index, totalSteps, stepStartedAt, now }) {
   const meta = getStepMeta(step.name);
   const status = step.status;
   const isRunning = status === 'running';
   const isComplete = status === 'completed';
   const isFailed = status === 'failed';
   const hasMessage = Boolean(step.message);
-  const [elapsedForStep, setElapsedForStep] = useState(0);
-
-  useEffect(() => {
-    if (!isRunning || !stepStartedAt) return undefined;
-    const start = stepStartedAt[index] || Date.now();
-    setElapsedForStep(Math.floor((Date.now() - start) / 1000));
-    const t = setInterval(() => setElapsedForStep(Math.floor((Date.now() - start) / 1000)), 1000);
-    return () => clearInterval(t);
-  }, [isRunning, index, stepStartedAt]);
-
-  const durationLabel = useMemo(() => {
-    const secs = meta.duration;
-    if (secs < 60) return `~${secs}s`;
-    return `~${Math.round(secs / 60)} min`;
-  }, [meta.duration]);
-
-  const elapsedLabel = useMemo(() => {
-    if (elapsedForStep < 60) return `${elapsedForStep}s`;
-    const m = Math.floor(elapsedForStep / 60);
-    const s = elapsedForStep % 60;
-    return `${m}m ${s.toString().padStart(2, '0')}s`;
-  }, [elapsedForStep]);
-
   const progressPct = useMemo(() => {
     if (isComplete) return 100;
     if (isFailed) return 0;
-    if (isRunning) return Math.min(95, Math.round((elapsedForStep / meta.duration) * 100));
+    if (isRunning) return Math.round(getInFlightProgress(now - (stepStartedAt[index] || now), meta.pace));
     return 0;
-  }, [isComplete, isFailed, isRunning, elapsedForStep, meta.duration]);
+  }, [isComplete, isFailed, isRunning, meta.pace, now, index, stepStartedAt]);
 
   const caps = meta.capabilities || [];
 
@@ -176,14 +162,6 @@ function TimelineStep({ step, index, totalSteps, stepStartedAt }) {
   ) : (
     <span className="processing-timeline-status is-pending">Queued</span>
   );
-
-  const timePill = isRunning
-    ? `${elapsedLabel} / ${durationLabel}`
-    : isComplete
-    ? `Took ${durationLabel.replace('~', '')}`
-    : isFailed
-    ? 'failed'
-    : `~${durationLabel.replace('~', '')}`;
 
   return (
     <motion.li
@@ -222,7 +200,6 @@ function TimelineStep({ step, index, totalSteps, stepStartedAt }) {
           </div>
           <div className="processing-pipeline-side">
             {statusBadge}
-            <span className="processing-pipeline-time">{timePill}</span>
           </div>
         </div>
 
@@ -258,6 +235,9 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
   const [error, setError] = useState(null);
   const [currentStep, setCurrentStep] = useState('Preparing your workspace');
   const [elapsed, setElapsed] = useState(0);
+  const [progressNow, setProgressNow] = useState(() => Date.now());
+  const [backendComplete, setBackendComplete] = useState(false);
+  const [displayProgress, setDisplayProgress] = useState(0);
   const [aiUsage, setAiUsage] = useState(null);
   const [clipCount, setClipCount] = useState(0);
   const [notifyStatus, setNotifyStatus] = useState(() => {
@@ -273,6 +253,7 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
   });
   const [copied, setCopied] = useState(false);
   const stepStartedAtRef = useRef({});
+  const progressTargetRef = useRef(0);
 
   // Re-sync with browser permission state when the tab regains focus
   useEffect(() => {
@@ -288,9 +269,19 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
 
   useEffect(() => {
     const started = Date.now();
-    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setElapsed(Math.floor((now - started) / 1000));
+      setProgressNow(now);
+    }, 400);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!backendComplete) return undefined;
+    const timer = setTimeout(onComplete, 1200);
+    return () => clearTimeout(timer);
+  }, [backendComplete, onComplete]);
 
   useEffect(() => {
     if (!jobId) return;
@@ -312,7 +303,7 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
         if (data.ai_usage) setAiUsage(data.ai_usage);
         if (data.clips_generated != null) setClipCount(data.clips_generated);
         if (data.status === 'completed') {
-          onComplete();
+          setBackendComplete(true);
           return;
         }
         if (data.status === 'failed') {
@@ -379,8 +370,32 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
 
   const completedSteps = steps.filter((s) => s.status === 'completed').length;
   const totalSteps = Math.max(steps.length, 1);
-  const progress = error ? 0 : Math.min(100, Math.round((completedSteps / totalSteps) * 100));
   const runningStep = steps.find((s) => s.status === 'running');
+  const runningStepIndex = steps.findIndex((s) => s.status === 'running');
+  const inFlightProgress = runningStep
+    ? getInFlightProgress(progressNow - (stepStartedAtRef.current[runningStepIndex] || progressNow), getStepMeta(runningStep.name).pace)
+    : 0;
+  const targetProgress = error
+    ? 0
+    : backendComplete
+    ? 100
+    : Math.min(99, Math.round(((completedSteps + (runningStep ? inFlightProgress / 100 : 0)) / totalSteps) * 100));
+  progressTargetRef.current = targetProgress;
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setDisplayProgress((current) => {
+        const target = progressTargetRef.current;
+        if (current === target) return current;
+        if (target < current) return target;
+        // Limit visible advances so a delayed poll cannot create a large jump.
+        return Math.min(target, Number((current + 1.2).toFixed(1)));
+      });
+    }, 350);
+    return () => clearInterval(timer);
+  }, []);
+
+  const progress = Math.round(displayProgress);
   const stageTitle = error ? 'Processing stopped' : (runningStep?.name || currentStep);
   const stageMessage = error ? error : (runningStep?.message || getStepMeta(runningStep?.name || currentStep).detail);
   const stageMeta = getStepMeta(runningStep?.name || currentStep);
@@ -399,10 +414,6 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
     : notifyStatus === 'default'
     ? 'Click the switch to allow desktop notifications.'
     : 'Get a desktop ping when exports are ready.';
-
-  // Estimated time remaining (rough heuristic: 60s per non-complete step)
-  const remainingSteps = totalSteps - completedSteps - (runningStep ? 1 : 0);
-  const estRemaining = remainingSteps > 0 ? remainingSteps * 60 + 30 : (runningStep ? 60 : 0);
 
   const elapsedSubtitle = useMemo(() => {
     if (elapsed === 0) return 'just started';
@@ -527,18 +538,14 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
                 </div>
               </div>
 
-              <div className="processing-times">
-                <div>
-                  <Icon type="clock" />
-                  <span>Elapsed time<strong>{formatElapsed(elapsed)}</strong></span>
-                </div>
-                <div>
-                  <Icon type="sparkles" />
-                  <span>Estimated remaining<strong>{estRemaining > 0 ? `~${formatElapsed(estRemaining)}` : 'Wrapping up'}</strong></span>
-                </div>
-                <div className={`processing-times-status ${error ? 'is-failed' : clipCount > 0 ? 'is-ready' : 'is-live'}`}>
+                <div className="processing-times">
+                  <div>
+                    <Icon type="clock" />
+                    <span>Elapsed time<strong>{formatElapsed(elapsed)}</strong></span>
+                  </div>
+                <div className={`processing-times-status ${error ? 'is-failed' : backendComplete ? 'is-ready' : 'is-live'}`}>
                   <span className="processing-times-dot" />
-                  <span>Status<strong>{error ? 'Failed' : clipCount > 0 ? `${clipCount} ready` : 'Active'}</strong></span>
+                  <span>Status<strong>{error ? 'Failed' : backendComplete ? 'Completed' : runningStep ? 'Running' : 'Preparing'}</strong></span>
                 </div>
               </div>
             </motion.section>
@@ -687,6 +694,7 @@ export default function ProcessingScreen({ jobId, jobDetails, notifyWhenComplete
                     index={index}
                     totalSteps={steps.length}
                     stepStartedAt={stepStartedAtRef.current}
+                    now={progressNow}
                   />
                 )) : (
                   <motion.li
