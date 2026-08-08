@@ -4,9 +4,14 @@ Auth Routes — Google OAuth 2.0 login/logout/session.
 
 import json
 import logging
+import hashlib
+import hmac
+import secrets
+import smtplib
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, quote
+from email.message import EmailMessage
 
 import httpx
 
@@ -23,6 +28,12 @@ from config import (
     JWT_ALGORITHM,
     JWT_EXPIRE_HOURS,
     SESSION_COOKIE_SECRET,
+    ENABLE_GOOGLE_AUTH,
+    SMTP_HOST,
+    SMTP_PORT,
+    SMTP_USER,
+    SMTP_PASS,
+    SMTP_USE_TLS,
 )
 from services.supabase_service import sync_user_to_supabase
 
@@ -36,6 +47,7 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 COOKIE_NAME = "clipo_session"
 
 _USERS_FILE = Path(__file__).resolve().parent.parent / "users.json"
+PASSWORD_RESET_TTL_MINUTES = 30
 
 
 def _load_users() -> dict[str, dict]:
@@ -48,6 +60,85 @@ def _load_users() -> dict[str, dict]:
 
 def _save_users(users: dict[str, dict]) -> None:
     _USERS_FILE.write_text(json.dumps(users, indent=2, default=str))
+
+
+def _find_user_by_email(email: str, users: dict[str, dict] | None = None) -> dict | None:
+    users = users if users is not None else _load_users()
+    email = email.strip().lower()
+    return next((user for user in users.values() if user.get("email", "").lower() == email), None)
+
+
+def _public_user(user: dict) -> dict:
+    created_at = user["created_at"]
+    if isinstance(created_at, datetime):
+        created_at = created_at.isoformat()
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "name": user["name"],
+        "display_name": user.get("display_name", ""),
+        "bio": user.get("bio", ""),
+        "picture": user.get("picture", ""),
+        "created_at": created_at,
+    }
+
+
+def _hash_password(password: str) -> str:
+    """Hash a password with scrypt (available in Python's standard library)."""
+    salt = secrets.token_bytes(16)
+    n, r, p = 2**14, 8, 1
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=n, r=r, p=p)
+    return f"scrypt${n}${r}${p}${salt.hex()}${digest.hex()}"
+
+
+def _verify_password(password: str, encoded: str) -> bool:
+    try:
+        algorithm, n, r, p, salt_hex, expected_hex = encoded.split("$", 6)
+        if algorithm != "scrypt":
+            return False
+        actual = hashlib.scrypt(
+            password.encode("utf-8"), salt=bytes.fromhex(salt_hex),
+            n=int(n), r=int(r), p=int(p),
+        )
+        return hmac.compare_digest(actual, bytes.fromhex(expected_hex))
+    except (TypeError, ValueError):
+        return False
+
+
+def _session_response(user: dict) -> JSONResponse:
+    token = _create_jwt(user["id"], user["email"], user["name"], user.get("picture", ""))
+    response = JSONResponse(content={"user": _public_user(user), "token": token})
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=BACKEND_URL.startswith("https://"),
+        samesite="none" if BACKEND_URL.startswith("https://") else "lax",
+        max_age=JWT_EXPIRE_HOURS * 3600,
+        path="/",
+    )
+    return response
+
+
+def _send_reset_email(email: str, name: str, token: str) -> bool:
+    """Send a reset link when SMTP is configured; never expose reset tokens in API responses."""
+    if not SMTP_HOST or not SMTP_USER or not SMTP_PASS:
+        logger.warning("Password reset requested for %s but SMTP is not configured", email)
+        return False
+    reset_url = f"{FRONTEND_URL.rstrip('/')}/?reset_token={quote(token, safe='')}"
+    message = EmailMessage()
+    message["Subject"] = "Reset your Clipo password"
+    message["From"] = SMTP_USER
+    message["To"] = email
+    message.set_content(
+        f"Hi {name or 'there'},\n\nReset your Clipo password within {PASSWORD_RESET_TTL_MINUTES} minutes:\n{reset_url}\n"
+    )
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as client:
+        if SMTP_USE_TLS:
+            client.starttls()
+        client.login(SMTP_USER, SMTP_PASS)
+        client.send_message(message)
+    return True
 
 
 def _create_jwt(user_id: str, email: str, name: str, picture: str) -> str:
@@ -154,6 +245,8 @@ async def google_login(state: str = None):
     the callback can redirect the user back to that origin. Defaults to the
     first configured frontend URL.
     """
+    if not ENABLE_GOOGLE_AUTH:
+        raise HTTPException(status_code=404, detail="Google sign-in is temporarily disabled")
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=500, detail="Google OAuth not configured")
 
@@ -176,6 +269,8 @@ async def google_login(state: str = None):
 @router.get("/google/callback")
 async def google_callback(request: Request, code: str = None, error: str = None, state: str = None):
     """Exchange Google auth code for tokens, create session, redirect to app."""
+    if not ENABLE_GOOGLE_AUTH:
+        raise HTTPException(status_code=404, detail="Google sign-in is temporarily disabled")
     origin = state if (state and state in FRONTEND_URLS) else FRONTEND_URLS[0]
     if error:
         record_auth(request, origin, "failed", error=f"oauth_error:{error}")
@@ -287,21 +382,105 @@ async def google_callback(request: Request, code: str = None, error: str = None,
     return response
 
 
+@router.post("/signup")
+async def signup(body: dict):
+    """Create an email/password account and begin an authenticated session."""
+    name = str(body.get("name", "")).strip()
+    email = str(body.get("email", "")).strip().lower()
+    password = str(body.get("password", ""))
+    if not name or "@" not in email:
+        raise HTTPException(status_code=400, detail="Enter a valid name and email address")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    users = _load_users()
+    if _find_user_by_email(email, users):
+        raise HTTPException(status_code=409, detail="An account with this email already exists")
+
+    user_id = f"email_{secrets.token_urlsafe(18)}"
+    now = datetime.now(timezone.utc)
+    user = {
+        "id": user_id,
+        "email": email,
+        "name": name,
+        "display_name": "",
+        "bio": "",
+        "picture": "",
+        "created_at": now,
+        "last_login": now,
+        "auth_provider": "password",
+        "password_hash": _hash_password(password),
+    }
+    users[user_id] = user
+    _save_users(users)
+    return _session_response(user)
+
+
+@router.post("/login")
+async def login(body: dict):
+    """Authenticate an existing email/password account."""
+    email = str(body.get("email", "")).strip().lower()
+    password = str(body.get("password", ""))
+    user = _find_user_by_email(email)
+    password_hash = user.get("password_hash", "") if user else ""
+    if not user or not password_hash or not _verify_password(password, password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    users = _load_users()
+    users[user["id"]]["last_login"] = datetime.now(timezone.utc)
+    _save_users(users)
+    return _session_response(users[user["id"]])
+
+
+@router.post("/forgot-password")
+async def forgot_password(body: dict):
+    """Start a password reset without revealing whether an email is registered."""
+    email = str(body.get("email", "")).strip().lower()
+    users = _load_users()
+    user = _find_user_by_email(email, users)
+    if user and user.get("password_hash"):
+        token = secrets.token_urlsafe(32)
+        user["password_reset_hash"] = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        user["password_reset_expires_at"] = (datetime.now(timezone.utc) + timedelta(minutes=PASSWORD_RESET_TTL_MINUTES)).isoformat()
+        _save_users(users)
+        try:
+            _send_reset_email(user["email"], user.get("name", ""), token)
+        except Exception as exc:  # Do not expose mail configuration details to clients.
+            logger.exception("Could not send password reset email: %s", exc)
+    return {"message": "If an account exists for that email, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(body: dict):
+    token = str(body.get("token", ""))
+    password = str(body.get("password", ""))
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    users = _load_users()
+    user = next((candidate for candidate in users.values() if candidate.get("password_reset_hash") == token_hash), None)
+    if not user:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired")
+    try:
+        expires_at = datetime.fromisoformat(user["password_reset_expires_at"])
+        if expires_at <= now:
+            raise ValueError
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired")
+    user["password_hash"] = _hash_password(password)
+    user.pop("password_reset_hash", None)
+    user.pop("password_reset_expires_at", None)
+    _save_users(users)
+    return {"message": "Password updated. You can now log in."}
+
+
 @router.get("/me")
 async def get_me(request: Request):
     """Return the currently authenticated user, or 401."""
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return {
-        "id": user["id"],
-        "email": user["email"],
-        "name": user["name"],
-        "display_name": user.get("display_name", ""),
-        "bio": user.get("bio", ""),
-        "picture": user["picture"],
-        "created_at": user["created_at"],
-    }
+    return _public_user(user)
 
 
 @router.put("/profile")

@@ -2362,6 +2362,42 @@ body {
   font-size: 13px;
 }
 
+.auth-notice {
+  margin: 0;
+  color: #86efac;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.auth-form-heading {
+  margin: 0 0 20px;
+  color: #f8fafc;
+  font-size: 21px;
+}
+
+.auth-text-button,
+.auth-switch button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #a78bfa;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.auth-text-button {
+  justify-self: start;
+  font-size: 13px;
+}
+
+.auth-switch {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 13px;
+  text-align: center;
+}
+
 .auth-submit {
   margin-top: 6px;
   min-height: 52px;

@@ -44,6 +44,38 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function authRequest(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || 'Could not complete that request.');
+  return data;
+}
+
+export async function signUp({ name, email, password }) {
+  const data = await authRequest('/auth/signup', { name, email, password });
+  setSessionToken(data.token);
+  return data.user;
+}
+
+export async function loginWithPassword({ email, password }) {
+  const data = await authRequest('/auth/login', { email, password });
+  setSessionToken(data.token);
+  return data.user;
+}
+
+export function requestPasswordReset(email) {
+  return authRequest('/auth/forgot-password', { email });
+}
+
+export function resetPassword(token, password) {
+  return authRequest('/auth/reset-password', { token, password });
+}
+
 /**
  * Get the current authenticated user. Returns null if not logged in.
  */
