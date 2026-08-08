@@ -486,7 +486,7 @@ export default function ProfileScreen({ onNavigate }) {
                 </div>
                 <div className="profile-account-row">
                   <span>Authentication</span>
-                  <span>Google OAuth</span>
+                  <span>Email &amp; password</span>
                 </div>
                 {user.created_at && (
                   <div className="profile-account-row">
