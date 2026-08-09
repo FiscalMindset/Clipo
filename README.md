@@ -750,9 +750,9 @@ Jobs are held in-memory. Restarting the backend clears all job state. For persis
 Made with care by:
 
 ```mermaid
-pie showData title Commit share (134 total)
+pie showData title Commit share (137 total)
     "Vicky Kumar" : 74
-    "SACHIN PRAJAPATI" : 60
+    "SACHIN PRAJAPATI" : 63
 ```
 
 | Contributor | Role |
