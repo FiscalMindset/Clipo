@@ -27,7 +27,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from config import CLIP_DIR, FRONTEND_URLS, GEMINI_API_KEY
+from config import CLIP_DIR, FRONTEND_URLS, GEMINI_API_KEY, TRANSCRIPTION_PROVIDER
 from routes.api import router as api_router
 from routes.auth import router as auth_router
 from routes.admin import router as admin_router
@@ -83,11 +83,16 @@ async def lifespan(app: FastAPI):
         print("Add GEMINI_API_KEY=your_key to backend/.env")
         print("=" * 60)
 
-    whisper_model = load_local_whisper_model()
-    if whisper_model is None:
-        print("Backend will use Gemini transcription fallback for uploads.")
+    if TRANSCRIPTION_PROVIDER == "whisper":
+        whisper_model = load_local_whisper_model()
+        if whisper_model is None:
+            print("Backend will use Gemini transcription fallback for uploads.")
+        else:
+            print("Whisper model loaded successfully!")
     else:
-        print("Whisper model loaded successfully!")
+        # Keep Whisper available, but do not load its model while benchmarking Deepgram.
+        whisper_model = None
+        print("Deepgram transcription is enabled; local Whisper loading is disabled.")
 
     yield
 
