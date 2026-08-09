@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from config import AUDIO_DIR
+from config import AUDIO_DIR, TRANSCRIPTION_PROVIDER
 from models.schemas import JobStatus, StepInfo, AIUsageInfo
 from services import db
 from services.audio_service import extract_audio
@@ -258,7 +258,7 @@ async def run_pipeline(job_id: str, whisper_model: Any):
         # --- Step 2: Transcribe ---
         job["status"] = JobStatus.TRANSCRIBING
         _update_step(job, "Transcribing Video", "running",
-                     "Loading Whisper model and transcribing audio...")
+                     f"Transcribing audio with {TRANSCRIPTION_PROVIDER.title()}...")
 
         transcript = await transcribe(audio_path, whisper_model, job_id)
         job["duration"] = transcript.get("duration")

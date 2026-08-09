@@ -54,6 +54,12 @@ WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
 WHISPER_DEVICE = _detect_whisper_device()
 WHISPER_COMPUTE_TYPE = _detect_whisper_compute_type(WHISPER_DEVICE)
 
+# --- Transcription Settings ---
+# Set TRANSCRIPTION_PROVIDER=whisper to restore the local faster-whisper path.
+TRANSCRIPTION_PROVIDER = os.getenv("TRANSCRIPTION_PROVIDER", "deepgram").strip().lower()
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "").strip()
+DEEPGRAM_MODEL = os.getenv("DEEPGRAM_MODEL", "nova-3").strip()
+
 # --- Gemini Settings ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = "gemini-2.5-flash"
@@ -234,7 +240,7 @@ if not BACKEND_ID:
             break
     BACKEND_ID = _auto_id or "local-dev"
 BACKEND_NAME = os.getenv("BACKEND_NAME", BACKEND_ID)
-BACKEND_VERSION = os.getenv("BACKEND_VERSION", "1.0.0")
+BACKEND_VERSION = os.getenv("BACKEND_VERSION", "1.0.1")
 BACKEND_REGION = os.getenv("BACKEND_REGION", "unknown")
 INSTANCE_ID = os.getenv("INSTANCE_ID", "") or uuid.uuid4().hex[:12]
 

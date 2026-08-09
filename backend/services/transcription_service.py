@@ -10,10 +10,21 @@ import wave
 from pathlib import Path
 from typing import Any
 
+import aiofiles
 from google import genai
 from google.genai import types
 
-from config import GEMINI_API_KEY, GEMINI_MODEL, TRANSCRIPT_DIR, WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER_MODEL
+from config import (
+    DEEPGRAM_API_KEY,
+    DEEPGRAM_MODEL,
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    TRANSCRIPTION_PROVIDER,
+    TRANSCRIPT_DIR,
+    WHISPER_COMPUTE_TYPE,
+    WHISPER_DEVICE,
+    WHISPER_MODEL,
+)
 from models.schemas import TranscriptResponse
 from services.gemini_keys import next_key, mark_rate_limited, is_rate_limited_error
 
@@ -69,6 +80,81 @@ def _audio_duration_seconds(audio_path: Path) -> float:
         frame_count = wav_file.getnframes()
         frame_rate = wav_file.getframerate() or 1
         return frame_count / float(frame_rate)
+
+
+async def _transcribe_with_deepgram(audio_path: Path) -> dict:
+    """Transcribe a WAV with Deepgram and preserve word timestamps for captions."""
+    if not DEEPGRAM_API_KEY:
+        raise RuntimeError(
+            "DEEPGRAM_API_KEY is not set. Add it to .env, or set TRANSCRIPTION_PROVIDER=whisper "
+            "to use the retained local Whisper transcription path."
+        )
+
+    import httpx
+
+    params = {
+        "model": DEEPGRAM_MODEL,
+        "smart_format": "true",
+        "punctuate": "true",
+        "utterances": "true",
+    }
+    headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}", "Content-Type": "audio/wav"}
+
+    async def audio_stream():
+        """Yield the audio asynchronously so httpx never receives a sync file handle."""
+        async with aiofiles.open(audio_path, "rb") as audio_file:
+            while chunk := await audio_file.read(1024 * 1024):
+                yield chunk
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
+        response = await client.post(
+            "https://api.deepgram.com/v1/listen",
+            params=params,
+            headers=headers,
+            content=audio_stream(),
+        )
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:500]
+        raise RuntimeError(f"Deepgram transcription failed ({exc.response.status_code}): {detail}") from exc
+
+    payload = response.json()
+    result = payload.get("results", {})
+    channel = (result.get("channels") or [{}])[0]
+    alternative = (channel.get("alternatives") or [{}])[0]
+    words = alternative.get("words") or []
+    utterances = result.get("utterances") or []
+    duration = float((payload.get("metadata") or {}).get("duration") or _audio_duration_seconds(audio_path))
+
+    segments = []
+    for utterance in utterances:
+        segment_words = [
+            {"word": word["word"], "start": round(word["start"], 2), "end": round(word["end"], 2)}
+            for word in words
+            if word.get("start", 0) >= utterance.get("start", 0)
+            and word.get("end", 0) <= utterance.get("end", duration)
+        ]
+        segments.append({
+            "start": round(utterance.get("start", 0), 2),
+            "end": round(utterance.get("end", 0), 2),
+            "text": utterance.get("transcript", "").strip(),
+            "words": segment_words,
+        })
+    if not segments and words:
+        segments = [{
+            "start": round(words[0]["start"], 2),
+            "end": round(words[-1]["end"], 2),
+            "text": alternative.get("transcript", "").strip(),
+            "words": [{"word": w["word"], "start": round(w["start"], 2), "end": round(w["end"], 2)} for w in words],
+        }]
+
+    return {
+        "text": alternative.get("transcript", "").strip(),
+        "segments": segments,
+        "language": (result.get("channels") or [{}])[0].get("detected_language", "en"),
+        "duration": duration,
+    }
 
 
 def load_local_whisper_model() -> Any | None:
@@ -185,7 +271,9 @@ async def transcribe(audio_path: Path, model: Any | None, job_id: str) -> dict:
     """
     loop = asyncio.get_running_loop()
 
-    if model is not None:
+    if TRANSCRIPTION_PROVIDER == "deepgram":
+        result = await _transcribe_with_deepgram(audio_path)
+    elif model is not None:
         # Run the CPU/GPU-heavy transcription in a thread.
         result = await loop.run_in_executor(
             None,
